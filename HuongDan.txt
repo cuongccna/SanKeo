@@ -1,0 +1,7 @@
+### Hướng dẫn sử dụng file này:
+
+1.  **Lưu file:** Copy nội dung trên vào file `PROJECT_CONTEXT.md` nằm ngay thư mục gốc dự án trên VPS của bạn.
+2.  **Cách dùng với Copilot:** Mỗi khi bạn yêu cầu Copilot viết code cho module nào, hãy bắt đầu bằng câu:
+    > *"Dựa trên `PROJECT_CONTEXT.md` (Native Linux Edition) đã cung cấp..."*
+
+Bây giờ bạn đã có bản thiết kế hoàn chỉnh. Bạn muốn bắt đầu bảo Copilot viết module nào trước? **Database** hay **Setup Môi trường**?

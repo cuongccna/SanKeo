@@ -1,0 +1,20 @@
+# Core
+python-dotenv
+loguru
+pydantic
+pydantic-settings
+
+# Database
+sqlalchemy
+asyncpg
+
+# Redis
+redis
+
+# Telegram
+telethon
+aiogram>=3.0.0
+
+# Web Server (Payment Webhook)
+fastapi
+uvicorn[standard]
