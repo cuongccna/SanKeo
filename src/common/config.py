@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     
     # Payment
     SEPAY_API_KEY: str = os.getenv("SEPAY_API_KEY", "")
+
+    # Google Gemini AI
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
     
     class Config:
         env_file = ".env"

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Time
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 import enum
@@ -17,6 +17,14 @@ class User(Base):
     plan_type = Column(String, default=PlanType.FREE) # Stored as string for simplicity
     expiry_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Affiliate
+    referrer_id = Column(BigInteger, nullable=True)
+    commission_balance = Column(Numeric, default=0.0)
+    
+    # Quiet Mode
+    quiet_start = Column(Time, nullable=True)
+    quiet_end = Column(Time, nullable=True)
 
     rules = relationship("FilterRule", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user")
@@ -41,3 +49,10 @@ class Transaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="transactions")
+
+class BlacklistedChannel(Base):
+    __tablename__ = "blacklisted_channels"
+
+    channel_id = Column(BigInteger, primary_key=True)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

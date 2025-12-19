@@ -19,7 +19,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from src.common.logger import get_logger
 from src.common.redis_client import get_redis
 from src.database.db import AsyncSessionLocal
-from src.database.models import FilterRule, User, PlanType
+from src.database.models import FilterRule as DBFilterRule, User, PlanType
+from src.worker.filter_engine import MessageProcessor, FilterRule as EngineFilterRule
+from src.worker.ai_engine import ai_engine
 
 logger = get_logger("worker")
 
@@ -27,39 +29,42 @@ logger = get_logger("worker")
 QUEUE_RAW_MESSAGES = "queue:raw_messages"
 QUEUE_NOTIFICATIONS = "queue:notifications"
 
-# Deduplication settings
-DEDUP_EXPIRE_SECONDS = 300  # 5 minutes
-DEDUP_PREFIX = "dedup:"
-
 # Free user limits
 FREE_MAX_KEYWORDS = 3
 FREE_MAX_NOTIFICATIONS_PER_DAY = 10
 
-
-async def is_duplicate(redis, message_data: dict) -> bool:
-    """
-    Check if message is duplicate using Redis cache.
-    Hash based on chat_id + message_id.
-    """
-    unique_key = f"{message_data['chat_id']}:{message_data['id']}"
-    hash_key = hashlib.md5(unique_key.encode()).hexdigest()
-    cache_key = f"{DEDUP_PREFIX}{hash_key}"
-    
-    # Check if exists
-    exists = await redis.exists(cache_key)
-    if exists:
-        return True
-    
-    # Set with expiration
-    await redis.setex(cache_key, DEDUP_EXPIRE_SECONDS, "1")
-    return False
+# Initialize Processor
+processor = MessageProcessor()
 
 
 async def check_user_can_receive(redis, user: User) -> bool:
     """
     Check if user can receive notification (VIP or within free limits).
+    Also checks Quiet Mode.
     """
-    # VIP users: always can receive
+    # 1. Check Quiet Mode
+    if user.quiet_start and user.quiet_end:
+        now = datetime.utcnow().time()
+        start = user.quiet_start
+        end = user.quiet_end
+        
+        is_quiet = False
+        if start < end:
+            # Example: 23:00 to 23:59 (Same day range? No, usually overnight)
+            # If start < end (e.g. 13:00 to 14:00), then quiet if now in between
+            if start <= now <= end:
+                is_quiet = True
+        else:
+            # Example: 23:00 to 07:00 (Overnight)
+            # Quiet if now >= 23:00 OR now <= 07:00
+            if now >= start or now <= end:
+                is_quiet = True
+        
+        if is_quiet:
+            # logger.debug(f"User {user.id} is in Quiet Mode ({start} - {end})")
+            return False
+
+    # VIP users: always can receive (if not in quiet mode)
     if user.plan_type == PlanType.VIP:
         if user.expiry_date and user.expiry_date > datetime.utcnow():
             return True
@@ -84,57 +89,110 @@ async def check_user_can_receive(redis, user: User) -> bool:
 
 async def process_message(redis, message_data: dict):
     """
-    Process a single message: check rules and create notifications.
+    Process a single message using Filter Engine.
     """
-    text = message_data.get("text", "")
-    if not text:
-        return
-    
-    # Deduplication check
-    if await is_duplicate(redis, message_data):
-        logger.debug(f"Duplicate message skipped: {message_data['id']}")
-        return
-    
     async with AsyncSessionLocal() as session:
         # Fetch active rules with user info
         result = await session.execute(
-            select(FilterRule)
-            .options(selectinload(FilterRule.user))
-            .where(FilterRule.is_active == True)
+            select(DBFilterRule)
+            .options(selectinload(DBFilterRule.user))
+            .where(DBFilterRule.is_active == True)
         )
-        rules = result.scalars().all()
+        db_rules = result.scalars().all()
         
+        # Convert DB rules to Engine rules
+        engine_rules = []
+        rule_map = {} # Map engine rule ID back to DB rule object to get user info
+        
+        for db_rule in db_rules:
+            # Simple conversion: keyword -> must_have
+            # TODO: In future, DB should support must_not_have columns
+            e_rule = EngineFilterRule(
+                id=db_rule.id,
+                user_id=db_rule.user_id,
+                must_have=[db_rule.keyword], 
+                must_not_have=[]
+            )
+            engine_rules.append(e_rule)
+            rule_map[db_rule.id] = db_rule
+
+        # 1. First Pass: Filter on Caption (Text only)
+        # This saves OCR costs if the caption already matches or is clearly spam.
+        matched_rules = processor.process_incoming_message(message_data, engine_rules)
+
+        # 2. Second Pass: OCR (Only if no match found AND image exists)
+        image_path = message_data.get("image_path")
+        if not matched_rules and image_path and os.path.exists(image_path):
+            logger.info(f"No text match found. Attempting OCR on: {image_path}")
+            try:
+                ocr_text = await ai_engine.extract_text_from_image(image_path)
+                if ocr_text:
+                    logger.info(f"OCR Result: {ocr_text[:50]}...")
+                    # Append OCR text to message text
+                    message_data['text'] += f"\n\n[OCR Content]:\n{ocr_text}"
+                    
+                    # Run Filter again with enriched text
+                    matched_rules = processor.process_incoming_message(message_data, engine_rules)
+            except Exception as e:
+                logger.error(f"Error during OCR processing: {e}")
+        
+        # Cleanup Image (Always delete if it exists)
+        if image_path and os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+                logger.info(f"Deleted temp image: {image_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete temp image {image_path}: {e}")
+
+        
+        if not matched_rules:
+            return
+
+        # AI Analysis (Lazy load: only if needed)
+        ai_analysis_result = None
+
         # Track which users already matched (avoid duplicate notifications)
         notified_users = set()
         
-        for rule in rules:
+        for match in matched_rules:
+            db_rule = rule_map.get(match.id)
+            if not db_rule:
+                continue
+                
             # Skip if user already notified for this message
-            if rule.user_id in notified_users:
+            if db_rule.user_id in notified_users:
                 continue
             
-            # Regex matching
-            try:
-                if re.search(rule.keyword, text, re.IGNORECASE):
-                    # Check if user can receive
-                    if not await check_user_can_receive(redis, rule.user):
-                        logger.debug(f"User {rule.user_id} reached daily limit")
-                        continue
-                    
-                    # Create notification
-                    notification = {
-                        "user_id": rule.user_id,
-                        "message": message_data,
-                        "matched_keyword": rule.keyword,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    
-                    await redis.lpush(QUEUE_NOTIFICATIONS, json.dumps(notification, ensure_ascii=False))
-                    notified_users.add(rule.user_id)
-                    
-                    logger.info(f"Match: user={rule.user_id}, keyword='{rule.keyword}', chat={message_data.get('chat_title', 'Unknown')}")
-                    
-            except re.error as e:
-                logger.warning(f"Invalid regex pattern '{rule.keyword}': {e}")
+            # Check if user can receive
+            if not await check_user_can_receive(redis, db_rule.user):
+                logger.debug(f"User {db_rule.user_id} reached daily limit")
+                continue
+            
+            # AI Analysis for VIP
+            analysis_text = None
+            # Check VIP status (assuming PlanType.VIP is defined and user object has it)
+            # If user.plan_type is a string or enum, handle accordingly.
+            # Based on models.py, PlanType is an Enum.
+            if db_rule.user.plan_type == PlanType.VIP:
+                if ai_analysis_result is None:
+                     logger.info("Performing AI Analysis for VIP user...")
+                     ai_analysis_result = await ai_engine.analyze_message(message_data.get('text', ''))
+                analysis_text = ai_analysis_result
+
+            # Create notification
+            notification = {
+                "user_id": db_rule.user_id,
+                "message": message_data,
+                "matched_keyword": db_rule.keyword,
+                "timestamp": datetime.utcnow().isoformat(),
+                "ai_analysis": analysis_text
+            }
+            
+            await redis.lpush(QUEUE_NOTIFICATIONS, json.dumps(notification, ensure_ascii=False))
+            notified_users.add(db_rule.user_id)
+            
+            logger.info(f"Match: user={db_rule.user_id}, keyword='{db_rule.keyword}', chat={message_data.get('chat_title', 'Unknown')}")
+
 
 
 async def main():
@@ -160,6 +218,7 @@ async def main():
             if result:
                 _, data = result
                 message_data = json.loads(data)
+                print(f"DEBUG: Worker received: {message_data.get('text', '')[:50]}")
                 await process_message(redis, message_data)
                 
         except json.JSONDecodeError as e:

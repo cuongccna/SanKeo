@@ -18,3 +18,5 @@ aiogram>=3.0.0
 # Web Server (Payment Webhook)
 fastapi
 uvicorn[standard]
+google-generativeai
+Pillow

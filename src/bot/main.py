@@ -6,24 +6,29 @@ import os
 import sys
 import asyncio
 import json
+import random
 from datetime import datetime, timedelta
 
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, CommandStart
+from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from sqlalchemy import select, delete
 from dotenv import load_dotenv
+from typing import Callable, Dict, Any, Awaitable
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.common.logger import get_logger
 from src.common.redis_client import get_redis
+from src.common.config import settings
 from src.database.db import AsyncSessionLocal
 from src.database.models import User, FilterRule, PlanType
+from src.bot.handlers import admin, presets, settings as bot_settings
 
 load_dotenv()
 
@@ -40,8 +45,26 @@ FREE_MAX_KEYWORDS = 3
 
 # Initialize bot
 bot = Bot(token=BOT_TOKEN)
-storage = MemoryStorage()
+storage = RedisStorage.from_url(settings.REDIS_URL)
 dp = Dispatcher(storage=storage)
+
+# Register Routers
+dp.include_router(admin.router)
+dp.include_router(presets.router)
+dp.include_router(bot_settings.router)
+
+class LoggingMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[types.TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: types.TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        if isinstance(event, types.Message):
+            logger.info(f"Middleware: Received message: '{event.text}' from {event.from_user.id}")
+        return await handler(event, data)
+
+dp.message.middleware(LoggingMiddleware())
 
 
 # ============ FSM States ============
@@ -52,9 +75,11 @@ class AddKeywordState(StatesGroup):
 # ============ Keyboards ============
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Thêm từ khóa", callback_data="add_keyword")],
+        [InlineKeyboardButton(text="➕� Kho từ khóa mẫu", callback_data="preset_libraries")],
+        [InlineKeyboardButton(text="� Thêm từ khóa", callback_data="add_keyword")],
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
         [InlineKeyboardButton(text="💎 Nâng cấp VIP", callback_data="upgrade_vip")],
+        [InlineKeyboardButton(text="🤝 Affiliate (Kiếm tiền)", callback_data="affiliate_info")],
         [InlineKeyboardButton(text="👤 Tài khoản", callback_data="my_account")],
     ])
 
@@ -66,18 +91,29 @@ def get_back_keyboard():
 
 
 # ============ Helpers ============
-async def get_or_create_user(user_id: int, username: str = None) -> User:
+async def get_or_create_user(user_id: int, username: str = None, referrer_id: int = None) -> User:
     """Get user from DB or create new one."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         
         if not user:
-            user = User(id=user_id, username=username, plan_type=PlanType.FREE)
+            # Prevent self-referral
+            if referrer_id == user_id:
+                referrer_id = None
+                
+            user = User(id=user_id, username=username, plan_type=PlanType.FREE, referrer_id=referrer_id)
             session.add(user)
             await session.commit()
             await session.refresh(user)
-            logger.info(f"New user created: {user_id} (@{username})")
+            logger.info(f"New user created: {user_id} (@{username}) with referrer: {referrer_id}")
+            
+            # Notify referrer if exists
+            if referrer_id:
+                try:
+                    await bot.send_message(referrer_id, f"🎉 **Chúc mừng!**\nBạn vừa giới thiệu thành công thành viên mới: @{username or user_id}", parse_mode="Markdown")
+                except Exception as e:
+                    logger.error(f"Failed to notify referrer {referrer_id}: {e}")
         
         return user
 
@@ -98,6 +134,35 @@ async def count_user_keywords(user_id: int) -> int:
 
 
 # ============ Commands ============
+@dp.message(CommandStart(deep_link=True))
+async def cmd_start_deep_link(message: types.Message, command: CommandObject):
+    """Handle /start with deep link (referral)."""
+    args = command.args
+    referrer_id = None
+    
+    if args and args.startswith("ref_"):
+        try:
+            referrer_id = int(args.replace("ref_", ""))
+        except ValueError:
+            pass
+            
+    user = await get_or_create_user(message.from_user.id, message.from_user.username, referrer_id)
+    
+    welcome_text = f"""
+🎯 **Chào mừng đến với Personal Alpha Hunter!**
+
+Bot sẽ giúp bạn:
+• Theo dõi từ khóa từ hàng ngàn nhóm Telegram
+• Nhận thông báo real-time khi có tin nhắn match
+
+📊 **Tài khoản của bạn:**
+• Gói: {'💎 VIP' if user.plan_type == PlanType.VIP else '🆓 FREE'}
+• Giới hạn từ khóa: {FREE_MAX_KEYWORDS if user.plan_type == PlanType.FREE else '∞'}
+
+Chọn chức năng bên dưới:
+"""
+    await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     """Handle /start command."""
@@ -117,6 +182,32 @@ Bot sẽ giúp bạn:
 Chọn chức năng bên dưới:
 """
     await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+
+@dp.message(Command("affiliate"))
+async def cmd_affiliate(message: types.Message):
+    """Show affiliate info."""
+    user_id = message.from_user.id
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        balance = user.commission_balance if user else 0.0
+        
+    text = f"""
+🤝 **Chương trình Affiliate (Tiếp thị liên kết)**
+
+🔗 **Link giới thiệu của bạn:**
+`{ref_link}`
+
+💰 **Hoa hồng hiện tại:** {balance:,.0f} VND
+
+🎁 **Cơ chế:**
+- Nhận ngay **20%** giá trị đơn hàng khi người bạn giới thiệu nâng cấp VIP.
+- Hoa hồng được cộng trực tiếp vào số dư.
+    """
+    await message.answer(text, parse_mode="Markdown")
 
 
 @dp.message(Command("add"))
@@ -156,9 +247,9 @@ async def cmd_pay(message: types.Message):
 ✅ Ưu tiên xử lý
 
 📱 **Chuyển khoản:**
-• Ngân hàng: **VIETCOMBANK**
-• STK: **1234567890**
-• Tên: **NGUYEN VAN A**
+• Ngân hàng: **MBank**
+• STK: **0987939605**
+• Tên: **NGO VAN CUONG**
 • Nội dung: `VIP {user_id}`
 
 ⚡ Sau khi chuyển khoản, hệ thống sẽ tự động kích hoạt VIP trong 1-2 phút.
@@ -181,8 +272,12 @@ async def callback_back_to_menu(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "add_keyword")
 async def callback_add_keyword(callback: CallbackQuery, state: FSMContext):
     """Handle add keyword button."""
+    await callback.answer()  # Answer callback to remove loading state
+    
     user = await get_or_create_user(callback.from_user.id)
     keyword_count = await count_user_keywords(callback.from_user.id)
+    
+    logger.info(f"User {callback.from_user.id} clicked add_keyword, current count: {keyword_count}")
     
     # Check limit for FREE users
     if user.plan_type == PlanType.FREE and keyword_count >= FREE_MAX_KEYWORDS:
@@ -197,11 +292,12 @@ async def callback_add_keyword(callback: CallbackQuery, state: FSMContext):
         return
     
     await callback.message.edit_text(
-        "📝 **Thêm từ khóa**\n\nNhập từ khóa bạn muốn theo dõi:\n\n_Hỗ trợ Regex. Ví dụ: ETH|BTC, [Rr]ecruit_",
+        "📝 **Thêm từ khóa**\n\nNhập từ khóa bạn muốn theo dõi:\n\n_Hỗ trợ Regex. Ví dụ: ETH|BTC, [Rr]ecruit_\n\n⚠️ **Lưu ý:** Nếu đang ở trong nhóm, hãy **Reply** tin nhắn này để bot nhận được!",
         reply_markup=get_back_keyboard(),
         parse_mode="Markdown"
     )
     await state.set_state(AddKeywordState.waiting_for_keyword)
+    logger.info(f"User {callback.from_user.id} state set to waiting_for_keyword")
 
 
 @dp.callback_query(F.data == "list_keywords")
@@ -274,9 +370,11 @@ async def callback_my_account(callback: CallbackQuery):
 
 
 # ============ FSM Handlers ============
-@dp.message(AddKeywordState.waiting_for_keyword)
+@dp.message(AddKeywordState.waiting_for_keyword, F.text)
 async def process_add_keyword(message: types.Message, state: FSMContext):
     """Process keyword input."""
+    logger.info(f"Processing keyword from user {message.from_user.id}: {message.text}")
+    
     keyword = message.text.strip()
     
     if not keyword:
@@ -288,22 +386,40 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
         return
     
     # Add to database
-    async with AsyncSessionLocal() as session:
-        new_rule = FilterRule(
-            user_id=message.from_user.id,
-            keyword=keyword,
-            is_active=True
+    try:
+        async with AsyncSessionLocal() as session:
+            new_rule = FilterRule(
+                user_id=message.from_user.id,
+                keyword=keyword,
+                is_active=True
+            )
+            session.add(new_rule)
+            await session.commit()
+        
+        await state.clear()
+        await message.answer(
+            f"✅ Đã thêm từ khóa: `{keyword}`\n\nBạn sẽ nhận thông báo khi có tin nhắn chứa từ khóa này.",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
         )
-        session.add(new_rule)
-        await session.commit()
+        logger.info(f"User {message.from_user.id} added keyword: {keyword}")
+    except Exception as e:
+        logger.error(f"Error adding keyword: {e}")
+        await message.answer("❌ Có lỗi xảy ra. Vui lòng thử lại!")
+        await state.clear()
+
+
+# ============ Catch-all handler for debugging ============
+@dp.message(F.text)
+async def catch_all_message(message: types.Message, state: FSMContext):
+    """Catch all text messages for debugging."""
+    current_state = await state.get_state()
+    logger.info(f"Catch-all: User {message.from_user.id} sent '{message.text}', state={current_state}")
     
-    await state.clear()
-    await message.answer(
-        f"✅ Đã thêm từ khóa: `{keyword}`\n\nBạn sẽ nhận thông báo khi có tin nhắn chứa từ khóa này.",
-        reply_markup=get_main_keyboard(),
-        parse_mode="Markdown"
-    )
-    logger.info(f"User {message.from_user.id} added keyword: {keyword}")
+    # If user is in waiting_for_keyword state but FSM didn't catch it
+    if current_state == AddKeywordState.waiting_for_keyword.state:
+        logger.info("Redirecting to add keyword handler...")
+        await process_add_keyword(message, state)
 
 
 # ============ Notification Worker ============
@@ -328,6 +444,7 @@ async def notification_worker():
                 chat_title = msg_data.get("chat_title", "Unknown")
                 text = msg_data.get("text", "")[:500]  # Truncate long messages
                 message_link = msg_data.get("message_link", "")
+                ai_analysis = notification.get("ai_analysis")
                 
                 notification_text = f"""
 🔔 **Match: `{keyword}`**
@@ -338,10 +455,14 @@ async def notification_worker():
 
 {"🔗 " + message_link if message_link else ""}
 """
+                if ai_analysis:
+                    notification_text += f"\n🤖 **AI Analysis:**\n{ai_analysis}"
                 
                 try:
                     await bot.send_message(user_id, notification_text, parse_mode="Markdown")
                     logger.debug(f"Notification sent to {user_id}")
+                    # Anti-Ban: Random sleep to mimic human behavior
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
                 except Exception as e:
                     logger.error(f"Failed to send notification to {user_id}: {e}")
                 
@@ -349,6 +470,32 @@ async def notification_worker():
             logger.error(f"Notification worker error: {e}")
             await asyncio.sleep(1)
 
+
+@dp.callback_query(F.data == "affiliate_info")
+async def callback_affiliate_info(callback: CallbackQuery):
+    """Show affiliate info via callback."""
+    user_id = callback.from_user.id
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        balance = user.commission_balance if user else 0.0
+        
+    text = f"""
+🤝 **Chương trình Affiliate (Tiếp thị liên kết)**
+
+🔗 **Link giới thiệu của bạn:**
+`{ref_link}`
+
+💰 **Hoa hồng hiện tại:** {balance:,.0f} VND
+
+🎁 **Cơ chế:**
+- Nhận ngay **20%** giá trị đơn hàng khi người bạn giới thiệu nâng cấp VIP.
+- Hoa hồng được cộng trực tiếp vào số dư.
+    """
+    await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
 
 # ============ Main ============
 async def main():
@@ -368,6 +515,11 @@ async def main():
     # Get bot info
     me = await bot.get_me()
     logger.info(f"Bot started: @{me.username}")
+
+    # Check webhook
+    webhook_info = await bot.get_webhook_info()
+    logger.info(f"Webhook info: {webhook_info}")
+    await bot.delete_webhook(drop_pending_updates=False)
     
     # Start polling
     await dp.start_polling(bot)
