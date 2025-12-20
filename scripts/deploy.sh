@@ -14,8 +14,9 @@ echo "🔌 Activating Virtual Environment..."
 # Ensure we are in the project root
 cd "$(dirname "$0")/.."
 
-if [ ! -d "venv" ]; then
-    echo "⚠️ venv not found! Creating one..."
+if [ ! -f "venv/bin/activate" ]; then
+    echo "⚠️ venv missing or broken! Creating one..."
+    rm -rf venv
     # Try standard creation
     if ! python3 -m venv venv; then
         echo "⚠️ Failed to create venv. Installing python3-venv..."
