@@ -48,11 +48,12 @@ async def on_my_chat_member(event: ChatMemberUpdated):
                     pass
                 return
 
-            # Check if Business Plan
-            if db_user.plan_type != PlanType.BUSINESS:
+            # Check if Business Plan or VIP
+            # Allow both VIP and BUSINESS to use this feature
+            if db_user.plan_type not in [PlanType.VIP, PlanType.BUSINESS]:
                  await event.bot.leave_chat(chat.id)
                  try:
-                    await event.bot.send_message(user.id, "⚠️ Tính năng tự động forward tin nhắn vào nhóm riêng chỉ dành cho gói **Business**.\nVui lòng nâng cấp để sử dụng.", parse_mode="Markdown")
+                    await event.bot.send_message(user.id, "⚠️ Tính năng tự động forward tin nhắn vào nhóm riêng chỉ dành cho gói **VIP/Business**.\nVui lòng nâng cấp để sử dụng.", parse_mode="Markdown")
                  except:
                     pass
                  return

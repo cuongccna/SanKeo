@@ -28,6 +28,7 @@ logger = get_logger("payment")
 
 # ============ Config ============
 VIP_PRICE = 50000  # 50.000 VND
+BUSINESS_PRICE = 100000 # 100.000 VND
 VIP_DURATION_DAYS = 30
 
 # Queue for bot notifications
@@ -132,8 +133,15 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
             # Start fresh
             new_expiry = now + timedelta(days=VIP_DURATION_DAYS)
         
+        # Determine Plan Type based on Amount
+        new_plan = PlanType.VIP
+        if amount >= BUSINESS_PRICE:
+            new_plan = PlanType.BUSINESS
+        
         # Update user
-        user.plan_type = PlanType.VIP
+        # If upgrading from VIP to BUSINESS, we might want to handle it differently
+        # But for simplicity, we just set the new plan type.
+        user.plan_type = new_plan
         user.expiry_date = new_expiry
         
         # Create transaction record

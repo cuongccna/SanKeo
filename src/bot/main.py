@@ -79,7 +79,7 @@ def get_main_keyboard():
         [InlineKeyboardButton(text="📚 Kho từ khóa mẫu", callback_data="preset_libraries")],
         [InlineKeyboardButton(text="➕ Thêm từ khóa", callback_data="add_keyword")],
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
-        [InlineKeyboardButton(text="💎 Nâng cấp VIP", callback_data="upgrade_vip")],
+        [InlineKeyboardButton(text="💎 Nâng cấp Gói", callback_data="upgrade_menu")],
         [InlineKeyboardButton(text="🤝 Affiliate (Kiếm tiền)", callback_data="affiliate_info")],
         [InlineKeyboardButton(text="👤 Tài khoản", callback_data="my_account")],
     ])
@@ -236,7 +236,7 @@ async def cmd_list(message: types.Message):
 
 
 @dp.message(Command("pay"))
-async def cmd_pay(message: types.Message):
+async def cmd_pay(message: types.Message, amount: int = 50000, plan_name: str = "VIP"):
     """Handle /pay command."""
     user_id = message.chat.id  # Use chat.id to be safe if from_user is missing in some contexts, but message.chat.id is reliable for DM
     
@@ -244,18 +244,19 @@ async def cmd_pay(message: types.Message):
     BANK_ID = "MB"
     ACCOUNT_NO = "0987939605"
     ACCOUNT_NAME = "NGO VAN CUONG"
-    AMOUNT = "50000"
-    CONTENT = f"VIP {user_id}"
+    AMOUNT = str(amount)
+    CONTENT = f"{plan_name} {user_id}"
     
     # Generate QR Code (VietQR)
     qr_url = f"https://img.vietqr.io/image/{BANK_ID}-{ACCOUNT_NO}-compact2.png?amount={AMOUNT}&addInfo={quote(CONTENT)}&accountName={quote(ACCOUNT_NAME)}"
     
     payment_text = f"""
-💎 **Nâng cấp VIP - 50.000đ/tháng**
+💎 **Nâng cấp {plan_name} - {amount:,.0f}đ/tháng**
 
 ✅ Không giới hạn từ khóa
 ✅ Không giới hạn thông báo/ngày
 ✅ Ưu tiên xử lý
+{ "✅ **Tự động forward tin nhắn vào nhóm riêng**" if plan_name == "BUSINESS" else ""}
 
 👇 **Quét mã QR để thanh toán nhanh:**
 • Ngân hàng: **MBank**
@@ -263,7 +264,7 @@ async def cmd_pay(message: types.Message):
 • Tên: **{ACCOUNT_NAME}**
 • Nội dung: `{CONTENT}`
 
-⚡ Hệ thống sẽ tự động kích hoạt VIP trong 1-2 phút sau khi nhận được tiền.
+⚡ Hệ thống sẽ tự động kích hoạt {plan_name} trong 1-2 phút sau khi nhận được tiền.
 """
     try:
         await message.answer_photo(
@@ -283,11 +284,22 @@ async def cmd_pay(message: types.Message):
 async def callback_back_to_menu(callback: CallbackQuery, state: FSMContext):
     """Handle back to menu."""
     await state.clear()
-    await callback.message.edit_text(
-        "🎯 **Menu chính**\n\nChọn chức năng:",
-        reply_markup=get_main_keyboard(),
-        parse_mode="Markdown"
-    )
+    
+    # If message has photo, delete and send new text message
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(
+            "🎯 **Menu chính**\n\nChọn chức năng:",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
+        )
+    else:
+        # If text message, just edit it
+        await callback.message.edit_text(
+            "🎯 **Menu chính**\n\nChọn chức năng:",
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown"
+        )
 
 
 @dp.callback_query(F.data == "add_keyword")
@@ -362,10 +374,48 @@ async def callback_delete_keyword(callback: CallbackQuery):
     await callback_list_keywords(callback)
 
 
-@dp.callback_query(F.data == "upgrade_vip")
-async def callback_upgrade_vip(callback: CallbackQuery):
-    """Handle upgrade VIP button."""
-    await cmd_pay(callback.message)
+@dp.callback_query(F.data == "upgrade_menu")
+async def callback_upgrade_menu(callback: CallbackQuery):
+    """Show upgrade options."""
+    text = """
+💎 **Chọn gói nâng cấp:**
+
+1️⃣ **Gói VIP (50.000đ/tháng)**
+• Không giới hạn từ khóa
+• Không giới hạn thông báo
+• Ưu tiên xử lý
+
+2️⃣ **Gói BUSINESS (100.000đ/tháng)**
+• Tất cả quyền lợi VIP
+• **Tự động forward tin nhắn vào Group/Channel riêng**
+• Hỗ trợ setup riêng
+    """
+    buttons = [
+        [InlineKeyboardButton(text="💎 Chọn VIP (50k)", callback_data="pay_vip")],
+        [InlineKeyboardButton(text="🏢 Chọn BUSINESS (100k)", callback_data="pay_business")],
+        [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
+    ]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "pay_vip")
+async def callback_pay_vip(callback: CallbackQuery):
+    """Handle pay VIP."""
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    await cmd_pay(callback.message, amount=50000, plan_name="VIP")
+
+
+@dp.callback_query(F.data == "pay_business")
+async def callback_pay_business(callback: CallbackQuery):
+    """Handle pay Business."""
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    await cmd_pay(callback.message, amount=100000, plan_name="BUSINESS")
 
 
 @dp.callback_query(F.data == "my_account")
@@ -375,17 +425,26 @@ async def callback_my_account(callback: CallbackQuery):
     keyword_count = await count_user_keywords(callback.from_user.id)
     
     expiry_text = ""
-    if user.plan_type == PlanType.VIP and user.expiry_date:
+    if user.expiry_date:
         expiry_text = f"\n• Hết hạn: {user.expiry_date.strftime('%d/%m/%Y')}"
     
+    # Determine Plan Display
+    plan_display = "🆓 FREE"
+    if user.plan_type == PlanType.VIP:
+        plan_display = "💎 VIP"
+    elif user.plan_type == PlanType.BUSINESS:
+        plan_display = "🏢 BUSINESS"
+    
+    created_at_str = user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A'
+
     text = f"""
 👤 **Thông tin tài khoản**
 
 • ID: `{user.id}`
 • Username: @{user.username or 'N/A'}
-• Gói: {'💎 VIP' if user.plan_type == PlanType.VIP else '🆓 FREE'}{expiry_text}
+• Gói: {plan_display}{expiry_text}
 • Số từ khóa: {keyword_count}{'/' + str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else ''}
-• Ngày tham gia: {user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A'}
+• Ngày tham gia: {created_at_str}
 """
     await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
 
