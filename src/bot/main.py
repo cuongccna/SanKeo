@@ -478,12 +478,17 @@ async def callback_my_account(callback: CallbackQuery):
             plan_display = "🏢 BUSINESS"
         
         created_at_str = user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A'
+        
+        # Escape username for Markdown
+        username = user.username or 'N/A'
+        if username != 'N/A':
+            username = username.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
 
         text = f"""
 👤 **Thông tin tài khoản**
 
 • ID: `{user.id}`
-• Username: @{user.username or 'N/A'}
+• Username: @{username}
 • Gói: {plan_display}{expiry_text}
 • Số từ khóa: {keyword_count}{'/' + str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else ''}
 • Ngày tham gia: {created_at_str}
