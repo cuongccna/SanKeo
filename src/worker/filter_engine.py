@@ -36,7 +36,8 @@ class MessageProcessor:
         text = text.lower()
         # Giữ lại a-z, 0-9, khoảng trắng, $, #, @, ., -
         # Thay thế các ký tự khác bằng khoảng trắng để tránh dính từ
-        text = re.sub(r'[^a-z0-9\s$#@.-]', ' ', text)
+        # UPDATE: Dùng \w để hỗ trợ tiếng Việt và các ngôn ngữ khác
+        text = re.sub(r'[^\w\s$#@.-]', ' ', text)
         # Xóa khoảng trắng thừa
         text = re.sub(r'\s+', ' ', text).strip()
         return text
