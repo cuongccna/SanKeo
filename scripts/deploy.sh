@@ -30,6 +30,8 @@ echo "📦 Installing dependencies..."
 # Upgrade pip first
 pip install --upgrade pip
 pip install -r requirements.txt
+# Explicitly install uvicorn to ensure it's available for PM2
+pip install uvicorn[standard]
 
 # 4. Run Database Migrations (if any)
 # Note: Assuming you have a migration script or using alembic. 
