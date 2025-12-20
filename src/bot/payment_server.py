@@ -7,13 +7,13 @@ import sys
 import re
 import json
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Union
 from decimal import Decimal
 
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from sqlalchemy import select
 
 # Add project root to path
@@ -55,7 +55,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # ============ Pydantic Models ============
 class SePayWebhookData(BaseModel):
     """SePay webhook payload structure."""
-    id: str = Field(..., description="Transaction ID from bank")
+    id: Union[str, int] = Field(..., description="Transaction ID from bank")
     gateway: Optional[str] = Field(default=None, description="Payment gateway name")
     transactionDate: Optional[str] = Field(default=None, description="Transaction date")
     accountNumber: Optional[str] = Field(default=None, description="Bank account number")
