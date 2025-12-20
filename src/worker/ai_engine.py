@@ -18,25 +18,46 @@ class AIEngine:
             logger.error(f"Failed to initialize AI Engine: {e}")
             self.model = None
 
-    async def analyze_message(self, message_text: str) -> str:
+    async def analyze_message(self, message_text: str, plan_type: str = "VIP") -> str:
         if not self.model:
             return "AI Analysis Unavailable (Missing Key)"
 
-        prompt = f"""
-        Bạn là một chuyên gia phân tích tín hiệu Crypto (Alpha Hunter).
-        Hãy phân tích tin nhắn sau và đưa ra đánh giá ngắn gọn (tối đa 5 dòng).
-        
-        Tin nhắn:
-        {message_text}
-        
-        Yêu cầu đầu ra:
-        - Tóm tắt: [Nội dung chính]
-        - Đánh giá: [Thang điểm 1-10 dựa trên độ tiềm năng/uy tín]
-        - Hành động: [Mua/Bán/Quan sát/Bỏ qua]
-        - Token: [Mã Token nếu có]
-        
-        Nếu tin nhắn là spam hoặc không phải tín hiệu, hãy trả về "Spam/Irrelevant".
-        """
+        if plan_type == "BUSINESS":
+            prompt = f"""
+            Bạn là một chuyên gia phân tích tín hiệu Crypto (Alpha Hunter) cao cấp.
+            Hãy phân tích tin nhắn sau một cách chi tiết và chuyên sâu.
+            
+            Tin nhắn:
+            {message_text}
+            
+            Yêu cầu đầu ra (Chi tiết, TỐI ĐA 20 DÒNG):
+            - 📌 **Tóm tắt**: [Nội dung chính, ngắn gọn]
+            - 📊 **Phân tích**: [Đánh giá chi tiết về setup, rủi ro, tiềm năng]
+            - 🎯 **Điểm vào (Entry)**: [Vùng giá cụ thể nếu có]
+            - 🎯 **Mục tiêu (TP)**: [Các mốc chốt lời]
+            - 🛑 **Cắt lỗ (SL)**: [Điểm cắt lỗ]
+            - ⭐ **Đánh giá**: [Thang điểm 1-10]
+            - 💡 **Lời khuyên**: [Nên vào lệnh ngay hay chờ đợi? Volume thế nào?]
+            
+            Lưu ý: Trình bày ngắn gọn, súc tích, không vượt quá 20 dòng.
+            Nếu tin nhắn là spam hoặc không phải tín hiệu, hãy trả về "Spam/Irrelevant".
+            """
+        else:
+            # VIP (Basic)
+            prompt = f"""
+            Bạn là một chuyên gia phân tích tín hiệu Crypto (Alpha Hunter).
+            Hãy phân tích tin nhắn sau và đưa ra đánh giá ngắn gọn (tối đa 5 dòng).
+            
+            Tin nhắn:
+            {message_text}
+            
+            Yêu cầu đầu ra:
+            - Tóm tắt: [Nội dung chính]
+            - Đánh giá: [Thang điểm 1-10]
+            - Hành động: [Mua/Bán/Quan sát]
+            
+            Nếu tin nhắn là spam hoặc không phải tín hiệu, hãy trả về "Spam/Irrelevant".
+            """
 
         try:
             response = await self.model.generate_content_async(prompt)

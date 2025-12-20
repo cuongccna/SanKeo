@@ -382,25 +382,59 @@ async def callback_delete_keyword(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "upgrade_menu")
 async def callback_upgrade_menu(callback: CallbackQuery):
-    """Show upgrade options."""
-    text = """
+    """Show upgrade options based on current plan."""
+    user = await get_or_create_user(callback.from_user.id)
+    
+    if user.plan_type == PlanType.BUSINESS:
+        text = """
+🏢 **Gói hiện tại: BUSINESS**
+
+Bạn đang sử dụng gói cao cấp nhất với đầy đủ quyền lợi:
+✅ Không giới hạn từ khóa
+✅ Auto-forward tin nhắn
+✅ **AI Phân tích chuyên sâu**
+✅ Hỗ trợ ưu tiên
+
+Cảm ơn bạn đã đồng hành cùng chúng tôi! ❤️
+        """
+        buttons = [[InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]]
+        
+    elif user.plan_type == PlanType.VIP:
+        text = """
+💎 **Nâng cấp lên BUSINESS**
+
+Bạn đang là thành viên VIP. Hãy nâng cấp lên BUSINESS để mở khóa:
+🚀 **Tự động forward tin nhắn vào Group/Channel riêng**
+🧠 **AI Phân tích chuyên sâu & Chi tiết hơn**
+✨ Hỗ trợ setup 1-1
+        """
+        buttons = [
+            [InlineKeyboardButton(text="🏢 Nâng cấp BUSINESS (100k)", callback_data="pay_business")],
+            [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
+        ]
+        
+    else:
+        text = """
 💎 **Chọn gói nâng cấp:**
 
 1️⃣ **Gói VIP (50.000đ/tháng)**
 • Không giới hạn từ khóa
 • Không giới hạn thông báo
+• 🤖 **AI Phân tích cơ bản**
 • Ưu tiên xử lý
 
 2️⃣ **Gói BUSINESS (100.000đ/tháng)**
 • Tất cả quyền lợi VIP
 • **Tự động forward tin nhắn vào Group/Channel riêng**
+• 🧠 **AI Phân tích chuyên sâu (Custom Prompt)**
 • Hỗ trợ setup riêng
-    """
-    buttons = [
-        [InlineKeyboardButton(text="💎 Chọn VIP (50k)", callback_data="pay_vip")],
-        [InlineKeyboardButton(text="🏢 Chọn BUSINESS (100k)", callback_data="pay_business")],
-        [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
-    ]
+        """
+        buttons = [
+            [InlineKeyboardButton(text="💎 Chọn VIP (50k)", callback_data="pay_vip")],
+            [InlineKeyboardButton(text="🏢 Chọn BUSINESS (100k)", callback_data="pay_business")],
+            [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
+        ]
+
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
 
@@ -427,23 +461,25 @@ async def callback_pay_business(callback: CallbackQuery):
 @dp.callback_query(F.data == "my_account")
 async def callback_my_account(callback: CallbackQuery):
     """Handle my account button."""
-    user = await get_or_create_user(callback.from_user.id)
-    keyword_count = await count_user_keywords(callback.from_user.id)
-    
-    expiry_text = ""
-    if user.expiry_date:
-        expiry_text = f"\n• Hết hạn: {user.expiry_date.strftime('%d/%m/%Y')}"
-    
-    # Determine Plan Display
-    plan_display = "🆓 FREE"
-    if user.plan_type == PlanType.VIP:
-        plan_display = "💎 VIP"
-    elif user.plan_type == PlanType.BUSINESS:
-        plan_display = "🏢 BUSINESS"
-    
-    created_at_str = user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A'
+    try:
+        logger.info(f"User {callback.from_user.id} requested account info")
+        user = await get_or_create_user(callback.from_user.id)
+        keyword_count = await count_user_keywords(callback.from_user.id)
+        
+        expiry_text = ""
+        if user.expiry_date:
+            expiry_text = f"\n• Hết hạn: {user.expiry_date.strftime('%d/%m/%Y')}"
+        
+        # Determine Plan Display
+        plan_display = "🆓 FREE"
+        if user.plan_type == PlanType.VIP:
+            plan_display = "💎 VIP"
+        elif user.plan_type == PlanType.BUSINESS:
+            plan_display = "🏢 BUSINESS"
+        
+        created_at_str = user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A'
 
-    text = f"""
+        text = f"""
 👤 **Thông tin tài khoản**
 
 • ID: `{user.id}`
@@ -452,7 +488,10 @@ async def callback_my_account(callback: CallbackQuery):
 • Số từ khóa: {keyword_count}{'/' + str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else ''}
 • Ngày tham gia: {created_at_str}
 """
-    await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error in callback_my_account: {e}", exc_info=True)
+        await callback.answer("❌ Có lỗi xảy ra khi tải thông tin tài khoản.", show_alert=True)
 
 
 # ============ FSM Handlers ============

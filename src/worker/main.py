@@ -119,8 +119,13 @@ async def process_message(redis, message_data: dict):
         # Convert DB rules to Engine rules
         engine_rules = []
         rule_map = {} # Map engine rule ID back to DB rule object to get user info
+        has_business_user = False
         
         for db_rule in db_rules:
+            # Check if we have any business user to enable OCR
+            if db_rule.user.plan_type == PlanType.BUSINESS:
+                has_business_user = True
+
             # Simple conversion: keyword -> must_have
             # TODO: In future, DB should support must_not_have columns
             e_rule = EngineFilterRule(
@@ -142,24 +147,27 @@ async def process_message(redis, message_data: dict):
         else:
             logger.debug("No rules matched based on text.")
 
-        # 2. Second Pass: OCR (Only if no match found AND image exists)
+        # 2. Second Pass: OCR (Only if no match found AND image exists AND has business user)
         image_path = message_data.get("image_path")
         # Check if image scanning is disabled
         inactive_img = os.getenv("INACTIVE_IMG", "False").lower() in ("true", "1", "yes")
 
         if not matched_rules and image_path and os.path.exists(image_path) and not inactive_img:
-            logger.info(f"No text match found. Attempting OCR on: {image_path}")
-            try:
-                ocr_text = await ai_engine.extract_text_from_image(image_path)
-                if ocr_text:
-                    logger.info(f"OCR Result: {ocr_text[:50]}...")
-                    # Append OCR text to message text
-                    message_data['text'] += f"\n\n[OCR Content]:\n{ocr_text}"
-                    
-                    # Run Filter again with enriched text
-                    matched_rules = processor.process_incoming_message(message_data, engine_rules)
-            except Exception as e:
-                logger.error(f"Error during OCR processing: {e}")
+            if has_business_user:
+                logger.info(f"No text match found. Attempting OCR on: {image_path}")
+                try:
+                    ocr_text = await ai_engine.extract_text_from_image(image_path)
+                    if ocr_text:
+                        logger.info(f"OCR Result: {ocr_text[:50]}...")
+                        # Append OCR text to message text
+                        message_data['text'] += f"\n\n[OCR Content]:\n{ocr_text}"
+                        
+                        # Run Filter again with enriched text
+                        matched_rules = processor.process_incoming_message(message_data, engine_rules)
+                except Exception as e:
+                    logger.error(f"Error during OCR processing: {e}")
+            else:
+                logger.debug("Skipping OCR: No active BUSINESS users.")
         
         # Cleanup Image (Always delete if it exists)
         if image_path and os.path.exists(image_path):
@@ -174,7 +182,8 @@ async def process_message(redis, message_data: dict):
             return
 
         # AI Analysis (Lazy load: only if needed)
-        ai_analysis_result = None
+        ai_analysis_vip = None
+        ai_analysis_business = None
 
         # Track which users already matched (avoid duplicate notifications)
         notified_users = set()
@@ -193,16 +202,20 @@ async def process_message(redis, message_data: dict):
                 logger.debug(f"User {db_rule.user_id} reached daily limit")
                 continue
             
-            # AI Analysis for VIP
+            # AI Analysis
             analysis_text = None
-            # Check VIP status (assuming PlanType.VIP is defined and user object has it)
-            # If user.plan_type is a string or enum, handle accordingly.
-            # Based on models.py, PlanType is an Enum.
+            
             if db_rule.user.plan_type == PlanType.VIP:
-                if ai_analysis_result is None:
+                if ai_analysis_vip is None:
                      logger.info("Performing AI Analysis for VIP user...")
-                     ai_analysis_result = await ai_engine.analyze_message(message_data.get('text', ''))
-                analysis_text = ai_analysis_result
+                     ai_analysis_vip = await ai_engine.analyze_message(message_data.get('text', ''), plan_type="VIP")
+                analysis_text = ai_analysis_vip
+            
+            elif db_rule.user.plan_type == PlanType.BUSINESS:
+                if ai_analysis_business is None:
+                     logger.info("Performing AI Analysis for BUSINESS user...")
+                     ai_analysis_business = await ai_engine.analyze_message(message_data.get('text', ''), plan_type="BUSINESS")
+                analysis_text = ai_analysis_business
 
             # Create notification
             notification = {

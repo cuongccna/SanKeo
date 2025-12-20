@@ -128,12 +128,31 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
         
         # Calculate new expiry date
         now = datetime.utcnow()
-        if user.expiry_date and user.expiry_date > now:
+        
+        # Handle timezone awareness for comparison
+        current_expiry = user.expiry_date
+        if current_expiry:
+            # If current_expiry is aware but now is naive, make now aware (UTC)
+            if current_expiry.tzinfo is not None and now.tzinfo is None:
+                from datetime import timezone
+                now = now.replace(tzinfo=timezone.utc)
+            # If current_expiry is naive but now is aware, make current_expiry aware
+            elif current_expiry.tzinfo is None and now.tzinfo is not None:
+                from datetime import timezone
+                current_expiry = current_expiry.replace(tzinfo=timezone.utc)
+
+        if current_expiry and current_expiry > now:
             # Extend from current expiry
+            # Ensure we add timedelta to the correct object (aware or naive)
+            # Ideally, we work with what user.expiry_date is, but for calculation safety:
             new_expiry = user.expiry_date + timedelta(days=VIP_DURATION_DAYS)
         else:
             # Start fresh
-            new_expiry = now + timedelta(days=VIP_DURATION_DAYS)
+            # Reset to naive UTC if that's what DB expects, or keep it consistent
+            # For simplicity, let's stick to naive UTC as per original design if DB is naive
+            # But if DB returns aware, we should respect it.
+            # Safest is to use the 'now' we just standardized or fresh utcnow
+            new_expiry = datetime.utcnow() + timedelta(days=VIP_DURATION_DAYS)
         
         # Determine Plan Type based on Amount
         new_plan = PlanType.VIP
