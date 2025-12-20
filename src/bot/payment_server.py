@@ -219,7 +219,7 @@ async def sepay_webhook(data: SePayWebhookData):
         )
     
     # Process upgrade
-    success = await process_vip_upgrade(user_id, data.id, data.transferAmount)
+    success = await process_vip_upgrade(user_id, str(data.id), data.transferAmount)
     
     if success:
         # Get updated user info for notification
