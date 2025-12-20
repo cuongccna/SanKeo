@@ -41,8 +41,8 @@ module.exports = {
     },
     {
       name: "sankeo-payment",
-      script: "./venv/bin/uvicorn",
-      args: "src.bot.payment_server:app --host 0.0.0.0 --port 8000",
+      script: "./venv/bin/python3",
+      args: "-m uvicorn src.bot.payment_server:app --host 0.0.0.0 --port 8000",
       interpreter: "none",
       instances: 1,
       autorestart: true,
