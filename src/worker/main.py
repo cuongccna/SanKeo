@@ -122,7 +122,10 @@ async def process_message(redis, message_data: dict):
 
         # 2. Second Pass: OCR (Only if no match found AND image exists)
         image_path = message_data.get("image_path")
-        if not matched_rules and image_path and os.path.exists(image_path):
+        # Check if image scanning is disabled
+        inactive_img = os.getenv("INACTIVE_IMG", "False").lower() in ("true", "1", "yes")
+
+        if not matched_rules and image_path and os.path.exists(image_path) and not inactive_img:
             logger.info(f"No text match found. Attempting OCR on: {image_path}")
             try:
                 ocr_text = await ai_engine.extract_text_from_image(image_path)

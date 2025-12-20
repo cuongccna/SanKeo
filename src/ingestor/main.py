@@ -108,7 +108,10 @@ async def message_handler(event):
         
         # Check for media (Photo)
         image_path = None
-        if event.photo:
+        # Check if image scanning is disabled
+        inactive_img = os.getenv("INACTIVE_IMG", "False").lower() in ("true", "1", "yes")
+        
+        if event.photo and not inactive_img:
             try:
                 # Create temp directory
                 temp_dir = os.path.join(os.getcwd(), "temp_images")
