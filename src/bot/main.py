@@ -81,6 +81,7 @@ def get_main_keyboard():
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
         [InlineKeyboardButton(text="💎 Nâng cấp Gói", callback_data="upgrade_menu")],
         [InlineKeyboardButton(text="🤝 Affiliate (Kiếm tiền)", callback_data="affiliate_info")],
+        [InlineKeyboardButton(text="⚙️ Cài đặt", callback_data="settings_menu")],
         [InlineKeyboardButton(text="👤 Tài khoản", callback_data="my_account")],
     ])
 
@@ -646,6 +647,38 @@ async def callback_affiliate_info(callback: CallbackQuery):
 🎁 **Cơ chế:**
 - Nhận ngay **20%** giá trị đơn hàng khi người bạn giới thiệu nâng cấp VIP.
 - Hoa hồng được cộng trực tiếp vào số dư.
+    """
+    await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "settings_menu")
+async def callback_settings_menu(callback: CallbackQuery):
+    """Show settings menu."""
+    user_id = callback.from_user.id
+    
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        quiet_start = user.quiet_start.strftime("%H:%M") if user.quiet_start else "Tắt"
+        quiet_end = user.quiet_end.strftime("%H:%M") if user.quiet_end else "Tắt"
+        
+    text = f"""
+⚙️ **Cài đặt (Quiet Mode)**
+
+Chế độ im lặng giúp bạn tắt thông báo vào khung giờ nghỉ ngơi.
+
+🕒 **Trạng thái hiện tại:**
+• Bắt đầu: `{quiet_start}`
+• Kết thúc: `{quiet_end}`
+
+📝 **Hướng dẫn thay đổi:**
+Gõ lệnh theo cú pháp:
+`/settings <giờ_bắt_đầu> <giờ_kết_thúc>`
+
+Ví dụ:
+• `/settings 23 7` (Im lặng từ 23h đêm đến 7h sáng)
+• `/settings off` (Tắt chế độ im lặng)
     """
     await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
 
