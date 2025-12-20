@@ -28,7 +28,7 @@ logger = get_logger("payment")
 
 # ============ Config ============
 VIP_PRICE = 50000  # 50.000 VND
-BUSINESS_PRICE = 100000 # 100.000 VND
+BUSINESS_PRICE = 299000 # 299.000 VND
 VIP_DURATION_DAYS = 30
 
 # Queue for bot notifications

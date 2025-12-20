@@ -410,7 +410,7 @@ Bạn đang là thành viên VIP. Hãy nâng cấp lên BUSINESS để mở khó
 ✨ Hỗ trợ setup 1-1
         """
         buttons = [
-            [InlineKeyboardButton(text="🏢 Nâng cấp BUSINESS (100k)", callback_data="pay_business")],
+            [InlineKeyboardButton(text="🏢 Nâng cấp BUSINESS (299k)", callback_data="pay_business")],
             [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
         ]
         
@@ -424,7 +424,7 @@ Bạn đang là thành viên VIP. Hãy nâng cấp lên BUSINESS để mở khó
 • 🤖 **AI Phân tích cơ bản**
 • Ưu tiên xử lý
 
-2️⃣ **Gói BUSINESS (100.000đ/tháng)**
+2️⃣ **Gói BUSINESS (299.000đ/tháng)**
 • Tất cả quyền lợi VIP
 • **Tự động forward tin nhắn vào Group/Channel riêng**
 • 🧠 **AI Phân tích chuyên sâu (Custom Prompt)**
@@ -432,7 +432,7 @@ Bạn đang là thành viên VIP. Hãy nâng cấp lên BUSINESS để mở khó
         """
         buttons = [
             [InlineKeyboardButton(text="💎 Chọn VIP (50k)", callback_data="pay_vip")],
-            [InlineKeyboardButton(text="🏢 Chọn BUSINESS (100k)", callback_data="pay_business")],
+            [InlineKeyboardButton(text="🏢 Chọn BUSINESS (299k)", callback_data="pay_business")],
             [InlineKeyboardButton(text="⬅️ Quay lại", callback_data="back_to_menu")]
         ]
 
