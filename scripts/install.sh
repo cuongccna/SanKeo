@@ -4,10 +4,16 @@
 sudo apt update && sudo apt upgrade -y
 
 # Install dependencies
-sudo apt install -y python3-venv redis-server postgresql postgresql-contrib
+sudo apt install -y python3-pip python3-venv python3-full redis-server postgresql postgresql-contrib
 
 # Create Virtual Environment
-python3 -m venv venv
+# Try to create venv, if fails, try installing specific version
+if ! python3 -m venv venv; then
+    echo "⚠️ Standard venv creation failed. Attempting to install python3.12-venv..."
+    sudo apt install -y python3.12-venv
+    python3 -m venv venv
+fi
+
 source venv/bin/activate
 
 # Install Python packages

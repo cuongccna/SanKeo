@@ -11,16 +11,24 @@ git pull origin main
 
 # 2. Activate Virtual Environment
 echo "🔌 Activating Virtual Environment..."
-if [ -d "venv" ]; then
-    source venv/bin/activate
-else
+if [ ! -d "venv" ]; then
     echo "⚠️ venv not found! Creating one..."
-    python3 -m venv venv
-    source venv/bin/activate
+    # Try standard creation
+    if ! python3 -m venv venv; then
+        echo "⚠️ Failed to create venv. Installing python3-venv..."
+        sudo apt update
+        sudo apt install -y python3-venv python3-full
+        # Retry
+        python3 -m venv venv
+    fi
 fi
+
+source venv/bin/activate
 
 # 3. Install Dependencies
 echo "📦 Installing dependencies..."
+# Upgrade pip first
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # 4. Run Database Migrations (if any)
