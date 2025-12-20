@@ -38,6 +38,12 @@ pip install -r requirements.txt
 # Explicitly install uvicorn to ensure it's available for PM2
 pip install uvicorn[standard]
 
+# Ensure sessions directory exists
+if [ ! -d "sessions" ]; then
+    echo "📂 Creating sessions directory..."
+    mkdir -p sessions
+fi
+
 # 4. Run Database Migrations (if any)
 # Note: Assuming you have a migration script or using alembic. 
 # For now, we run the specific migration scripts we created.
