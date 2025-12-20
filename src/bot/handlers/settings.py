@@ -1,11 +1,88 @@
 from aiogram import Router, types, F
-from aiogram.filters import Command, CommandObject
-from sqlalchemy import select
+from aiogram.filters import Command, CommandObject, ChatMemberUpdatedFilter, KICKED, LEFT, RESTRICTED, MEMBER, ADMINISTRATOR, CREATOR
+from aiogram.types import ChatMemberUpdated
+from sqlalchemy import select, delete
 from datetime import time
 from src.database.db import AsyncSessionLocal
-from src.database.models import User
+from src.database.models import User, UserForwardingTarget, PlanType
 
 router = Router()
+
+@router.my_chat_member()
+async def on_my_chat_member(event: ChatMemberUpdated):
+    """
+    Handle when bot is added to a channel/group.
+    """
+    # Only care if bot is added as admin or member (if group allows)
+    # Usually for channels, bot must be admin to post.
+    new_state = event.new_chat_member.status
+    
+    # If bot is kicked or left, remove target
+    if new_state in ["kicked", "left"]:
+        chat = event.chat
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(UserForwardingTarget).where(UserForwardingTarget.channel_id == chat.id)
+            )
+            await session.commit()
+        return
+
+    # If bot is added (member or admin)
+    if new_state in ["member", "administrator", "creator"]:
+        user = event.from_user
+        chat = event.chat
+        
+        # Ignore private chats
+        if chat.type == "private":
+            return
+
+        async with AsyncSessionLocal() as session:
+            # Check user plan
+            db_user = await session.get(User, user.id)
+            if not db_user:
+                # User not registered
+                await event.bot.leave_chat(chat.id)
+                try:
+                    await event.bot.send_message(user.id, "⚠️ Bạn chưa đăng ký sử dụng Bot. Vui lòng /start trước.")
+                except:
+                    pass
+                return
+
+            # Check if Business Plan
+            if db_user.plan_type != PlanType.BUSINESS:
+                 await event.bot.leave_chat(chat.id)
+                 try:
+                    await event.bot.send_message(user.id, "⚠️ Tính năng tự động forward tin nhắn vào nhóm riêng chỉ dành cho gói **Business**.\nVui lòng nâng cấp để sử dụng.", parse_mode="Markdown")
+                 except:
+                    pass
+                 return
+            
+            # Save target
+            # Check if already exists
+            existing = await session.execute(
+                select(UserForwardingTarget).where(
+                    UserForwardingTarget.user_id == user.id,
+                    UserForwardingTarget.channel_id == chat.id
+                )
+            )
+            if existing.scalar_one_or_none():
+                # Update title if changed
+                # But for now just return
+                return
+
+            new_target = UserForwardingTarget(
+                user_id=user.id,
+                channel_id=chat.id,
+                title=chat.title
+            )
+            session.add(new_target)
+            await session.commit()
+            
+            try:
+                await event.bot.send_message(chat.id, "✅ Bot đã được kết nối thành công! Tin nhắn lọc được sẽ được chuyển tiếp vào đây.")
+                await event.bot.send_message(user.id, f"✅ Đã kết nối thành công với nhóm **{chat.title}**!")
+            except:
+                pass
 
 @router.message(Command("settings"))
 async def cmd_settings(message: types.Message, command: CommandObject):

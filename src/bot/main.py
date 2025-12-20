@@ -28,7 +28,7 @@ from src.common.logger import get_logger
 from src.common.redis_client import get_redis
 from src.common.config import settings
 from src.database.db import AsyncSessionLocal
-from src.database.models import User, FilterRule, PlanType
+from src.database.models import User, FilterRule, PlanType, UserForwardingTarget
 from src.bot.handlers import admin, presets, settings as bot_settings
 
 load_dotenv()
@@ -479,13 +479,35 @@ async def notification_worker():
                 if ai_analysis:
                     notification_text += f"\n🤖 **AI Analysis:**\n{ai_analysis}"
                 
+                # 1. Send to User (DM)
                 try:
                     await bot.send_message(user_id, notification_text, parse_mode="Markdown")
                     logger.debug(f"Notification sent to {user_id}")
-                    # Anti-Ban: Random sleep to mimic human behavior
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
                 except Exception as e:
                     logger.error(f"Failed to send notification to {user_id}: {e}")
+
+                # 2. Forward to Business Targets
+                try:
+                    async with AsyncSessionLocal() as session:
+                        # Get targets
+                        result = await session.execute(
+                            select(UserForwardingTarget).where(UserForwardingTarget.user_id == user_id)
+                        )
+                        targets = result.scalars().all()
+                        
+                        if targets:
+                            for target in targets:
+                                try:
+                                    await bot.send_message(target.channel_id, notification_text, parse_mode="Markdown")
+                                    logger.debug(f"Forwarded to channel {target.channel_id} for user {user_id}")
+                                    await asyncio.sleep(0.5) # Prevent FloodWait
+                                except Exception as e:
+                                    logger.error(f"Failed to forward to channel {target.channel_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing forwarding targets for {user_id}: {e}")
+
+                # Anti-Ban: Random sleep to mimic human behavior
+                await asyncio.sleep(random.uniform(0.5, 1.5))
                 
         except Exception as e:
             logger.error(f"Notification worker error: {e}")

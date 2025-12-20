@@ -8,6 +8,7 @@ Base = declarative_base()
 class PlanType(str, enum.Enum):
     FREE = "FREE"
     VIP = "VIP"
+    BUSINESS = "BUSINESS"
 
 class User(Base):
     __tablename__ = "users"
@@ -28,6 +29,18 @@ class User(Base):
 
     rules = relationship("FilterRule", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user")
+    forwarding_targets = relationship("UserForwardingTarget", back_populates="user", cascade="all, delete-orphan")
+
+class UserForwardingTarget(Base):
+    __tablename__ = "user_forwarding_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    channel_id = Column(BigInteger, nullable=False)
+    title = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="forwarding_targets")
 
 class FilterRule(Base):
     __tablename__ = "filter_rules"
