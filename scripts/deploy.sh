@@ -32,6 +32,16 @@ source ./venv/bin/activate || { echo "❌ Failed to activate venv"; exit 1; }
 
 # 3. Install Dependencies
 echo "📦 Installing dependencies..."
+
+# Check and install Redis if missing
+if ! command -v redis-server &> /dev/null; then
+    echo "⚠️ Redis not found! Installing..."
+    sudo apt update
+    sudo apt install -y redis-server
+    sudo systemctl enable redis-server
+    sudo systemctl start redis-server
+fi
+
 # Upgrade pip first
 pip install --upgrade pip
 pip install -r requirements.txt
