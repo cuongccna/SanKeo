@@ -7,6 +7,7 @@ import sys
 import asyncio
 import json
 import random
+from urllib.parse import quote
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
@@ -75,8 +76,8 @@ class AddKeywordState(StatesGroup):
 # ============ Keyboards ============
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕� Kho từ khóa mẫu", callback_data="preset_libraries")],
-        [InlineKeyboardButton(text="� Thêm từ khóa", callback_data="add_keyword")],
+        [InlineKeyboardButton(text="📚 Kho từ khóa mẫu", callback_data="preset_libraries")],
+        [InlineKeyboardButton(text="➕ Thêm từ khóa", callback_data="add_keyword")],
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
         [InlineKeyboardButton(text="💎 Nâng cấp VIP", callback_data="upgrade_vip")],
         [InlineKeyboardButton(text="🤝 Affiliate (Kiếm tiền)", callback_data="affiliate_info")],
@@ -237,7 +238,17 @@ async def cmd_list(message: types.Message):
 @dp.message(Command("pay"))
 async def cmd_pay(message: types.Message):
     """Handle /pay command."""
-    user_id = message.from_user.id
+    user_id = message.chat.id  # Use chat.id to be safe if from_user is missing in some contexts, but message.chat.id is reliable for DM
+    
+    # Bank Info
+    BANK_ID = "MB"
+    ACCOUNT_NO = "0987939605"
+    ACCOUNT_NAME = "NGO VAN CUONG"
+    AMOUNT = "50000"
+    CONTENT = f"VIP {user_id}"
+    
+    # Generate QR Code (VietQR)
+    qr_url = f"https://img.vietqr.io/image/{BANK_ID}-{ACCOUNT_NO}-compact2.png?amount={AMOUNT}&addInfo={quote(CONTENT)}&accountName={quote(ACCOUNT_NAME)}"
     
     payment_text = f"""
 💎 **Nâng cấp VIP - 50.000đ/tháng**
@@ -246,15 +257,25 @@ async def cmd_pay(message: types.Message):
 ✅ Không giới hạn thông báo/ngày
 ✅ Ưu tiên xử lý
 
-📱 **Chuyển khoản:**
+👇 **Quét mã QR để thanh toán nhanh:**
 • Ngân hàng: **MBank**
-• STK: **0987939605**
-• Tên: **NGO VAN CUONG**
-• Nội dung: `VIP {user_id}`
+• STK: `{ACCOUNT_NO}`
+• Tên: **{ACCOUNT_NAME}**
+• Nội dung: `{CONTENT}`
 
-⚡ Sau khi chuyển khoản, hệ thống sẽ tự động kích hoạt VIP trong 1-2 phút.
+⚡ Hệ thống sẽ tự động kích hoạt VIP trong 1-2 phút sau khi nhận được tiền.
 """
-    await message.answer(payment_text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+    try:
+        await message.answer_photo(
+            photo=qr_url,
+            caption=payment_text,
+            reply_markup=get_back_keyboard(),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send QR code: {e}")
+        # Fallback to text only
+        await message.answer(payment_text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
 
 
 # ============ Callbacks ============
