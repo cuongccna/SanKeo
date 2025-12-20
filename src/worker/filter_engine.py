@@ -111,11 +111,12 @@ class MessageProcessor:
         normalized_text = self.normalize_text(raw_text)
 
         # 2. Check trùng (Global deduplication cho nội dung)
-        # Lưu ý: Nếu muốn user A nhận được dù user B đã nhận tin giống hệt, 
-        # thì logic dedup này cần đặt sau hoặc điều chỉnh scope.
-        # Ở đây ta dedup global để tiết kiệm resource: 1 tin rác chỉ xử lý 1 lần.
-        if self.is_duplicate(normalized_text):
-            return []
+        # REMOVED: Global deduplication causes issues with channel-specific rules.
+        # Example: User A wants msg from Channel X. Msg arrives from Channel Y first (cached).
+        # Then arrives from Channel X (ignored due to cache). User A misses it.
+        # We will handle deduplication per-user in the Worker Main loop.
+        # if self.is_duplicate(normalized_text):
+        #     return []
 
         matched_rules = []
 

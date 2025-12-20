@@ -185,6 +185,10 @@ async def process_message(redis, message_data: dict):
         ai_analysis_vip = None
         ai_analysis_business = None
 
+        # Generate Message Hash for Dedup
+        msg_text = message_data.get('text', '')
+        msg_hash = hashlib.md5(msg_text.encode('utf-8')).hexdigest()
+
         # Track which users already matched (avoid duplicate notifications)
         notified_users = set()
         
@@ -193,14 +197,23 @@ async def process_message(redis, message_data: dict):
             if not db_rule:
                 continue
                 
-            # Skip if user already notified for this message
+            # Skip if user already notified for this message (in this batch)
             if db_rule.user_id in notified_users:
+                continue
+
+            # Check Redis Dedup (Per-user deduplication)
+            dedup_key = f"dedup:msg:{db_rule.user_id}:{msg_hash}"
+            if await redis.exists(dedup_key):
+                logger.debug(f"Duplicate message for user {db_rule.user_id}, skipping.")
                 continue
             
             # Check if user can receive
             if not await check_user_can_receive(redis, db_rule.user):
                 logger.debug(f"User {db_rule.user_id} reached daily limit")
                 continue
+            
+            # Set Dedup (TTL 1 hour)
+            await redis.setex(dedup_key, 3600, "1")
             
             # AI Analysis
             analysis_text = None
