@@ -90,7 +90,15 @@ async def message_handler(event):
     Chỉ serialize và đẩy vào Redis, KHÔNG xử lý logic.
     """
     # DEBUG: Print everything
-    print(f"DEBUG: Received message: {event.text[:50] if event.text else 'Media'} from {event.chat_id}")
+    chat_title = "Unknown"
+    try:
+        chat = await event.get_chat()
+        chat_title = getattr(chat, 'title', 'Unknown')
+    except:
+        pass
+    
+    print(f"DEBUG: Received message: {event.text[:50] if event.text else 'Media'} from {event.chat_id} ({chat_title})")
+    logger.debug(f"Ingested: [{chat_title}] {event.text[:50] if event.text else 'Media'}...")
 
     try:
         # Check blacklist

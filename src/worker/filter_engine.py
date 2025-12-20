@@ -66,7 +66,7 @@ class MessageProcessor:
             # Dùng \b để bắt chính xác từ (word boundary), tránh match nhầm (ví dụ "bit" trong "bitcoin")
             # Escape keyword để an toàn với regex
             pattern = r'\b' + re.escape(keyword) + r'\b'
-            if re.search(pattern, normalized_text):
+            if re.search(pattern, normalized_text, re.IGNORECASE):
                 return False
 
         # 2. Check Must Have
@@ -82,16 +82,16 @@ class MessageProcessor:
             try:
                 # Nếu keyword chứa ký tự đặc biệt regex, ta coi như user muốn dùng regex
                 if any(c in keyword for c in r".^$*+?{}[]\|()"):
-                     if re.search(keyword, normalized_text):
+                     if re.search(keyword, normalized_text, re.IGNORECASE):
                          return True
                 else:
                     # Keyword thường -> match chính xác từ
                     pattern = r'\b' + re.escape(keyword) + r'\b'
-                    if re.search(pattern, normalized_text):
+                    if re.search(pattern, normalized_text, re.IGNORECASE):
                         return True
             except re.error:
                 # Fallback nếu regex lỗi: tìm string thường
-                if keyword in normalized_text:
+                if keyword.lower() in normalized_text:
                     return True
 
         return False

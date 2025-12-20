@@ -118,7 +118,13 @@ async def process_message(redis, message_data: dict):
 
         # 1. First Pass: Filter on Caption (Text only)
         # This saves OCR costs if the caption already matches or is clearly spam.
+        logger.debug(f"Processing message: {message_data.get('text', '')[:50]}...")
         matched_rules = processor.process_incoming_message(message_data, engine_rules)
+        
+        if matched_rules:
+            logger.info(f"Matched {len(matched_rules)} rules based on text.")
+        else:
+            logger.debug("No rules matched based on text.")
 
         # 2. Second Pass: OCR (Only if no match found AND image exists)
         image_path = message_data.get("image_path")
