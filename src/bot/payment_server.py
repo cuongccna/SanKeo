@@ -85,6 +85,8 @@ def parse_user_id_from_content(content: str) -> Optional[int]:
     # Pattern: VIP followed by digits
     patterns = [
         r'VIP\s*(\d+)',      # VIP 123456789 or VIP123456789
+        r'BUS\s*(\d+)',      # BUS 123456789 (Business)
+        r'BUSINESS\s*(\d+)', # BUSINESS 123456789
         r'SANKEO\s*(\d+)',   # SANKEO 123456789
         r'AH\s*(\d+)',       # AH 123456789 (Alpha Hunter)
     ]

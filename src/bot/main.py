@@ -245,7 +245,13 @@ async def cmd_pay(message: types.Message, amount: int = 50000, plan_name: str = 
     ACCOUNT_NO = "0987939605"
     ACCOUNT_NAME = "NGO VAN CUONG"
     AMOUNT = str(amount)
-    CONTENT = f"{plan_name} {user_id}"
+    
+    # Determine content prefix
+    prefix = plan_name
+    if plan_name == "BUSINESS":
+        prefix = "BUS"
+        
+    CONTENT = f"{prefix} {user_id}"
     
     # Generate QR Code (VietQR)
     qr_url = f"https://img.vietqr.io/image/{BANK_ID}-{ACCOUNT_NO}-compact2.png?amount={AMOUNT}&addInfo={quote(CONTENT)}&accountName={quote(ACCOUNT_NAME)}"
