@@ -11,6 +11,8 @@ from typing import Optional
 from decimal import Decimal
 
 from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -39,22 +41,32 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body = await request.body()
+    logger.error(f"Validation Error: {exc.errors()}")
+    logger.error(f"Request Body: {body.decode()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": body.decode()},
+    )
+
 
 # ============ Pydantic Models ============
 class SePayWebhookData(BaseModel):
     """SePay webhook payload structure."""
     id: str = Field(..., description="Transaction ID from bank")
-    gateway: str = Field(default="", description="Payment gateway name")
-    transactionDate: str = Field(default="", description="Transaction date")
-    accountNumber: str = Field(default="", description="Bank account number")
+    gateway: Optional[str] = Field(default=None, description="Payment gateway name")
+    transactionDate: Optional[str] = Field(default=None, description="Transaction date")
+    accountNumber: Optional[str] = Field(default=None, description="Bank account number")
     code: Optional[str] = Field(default=None, description="Transaction code")
     content: str = Field(..., description="Transfer content/memo")
     transferType: str = Field(default="in", description="Transfer type: in/out")
     transferAmount: float = Field(..., description="Transfer amount")
     accumulated: float = Field(default=0, description="Accumulated balance")
     subAccount: Optional[str] = Field(default=None, description="Sub account")
-    referenceCode: str = Field(default="", description="Reference code")
-    description: str = Field(default="", description="Description")
+    referenceCode: Optional[str] = Field(default=None, description="Reference code")
+    description: Optional[str] = Field(default=None, description="Description")
 
 
 class WebhookResponse(BaseModel):
