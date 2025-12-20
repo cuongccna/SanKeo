@@ -11,6 +11,9 @@ git pull origin main
 
 # 2. Activate Virtual Environment
 echo "🔌 Activating Virtual Environment..."
+# Ensure we are in the project root
+cd "$(dirname "$0")/.."
+
 if [ ! -d "venv" ]; then
     echo "⚠️ venv not found! Creating one..."
     # Try standard creation
@@ -23,7 +26,8 @@ if [ ! -d "venv" ]; then
     fi
 fi
 
-source venv/bin/activate
+# Activate venv
+source ./venv/bin/activate || { echo "❌ Failed to activate venv"; exit 1; }
 
 # 3. Install Dependencies
 echo "📦 Installing dependencies..."
@@ -38,10 +42,10 @@ pip install uvicorn[standard]
 # For now, we run the specific migration scripts we created.
 echo "🗄️ Running Database Migrations..."
 # Initialize DB (Create tables if not exist)
-python init_db.py
+python3 init_db.py
 # Run specific migrations for updates
-python -m scripts.migrate_affiliate
-python -m scripts.migrate_quiet_blacklist
+python3 -m scripts.migrate_affiliate
+python3 -m scripts.migrate_quiet_blacklist
 
 # 5. Reload PM2
 echo "🔄 Reloading PM2 processes..."
