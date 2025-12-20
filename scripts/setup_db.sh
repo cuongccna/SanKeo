@@ -5,7 +5,7 @@
 
 DB_NAME="sankeo_db"
 DB_USER="sankeo_user"
-DB_PASS="sankeo_password" # CHANGE THIS!
+DB_PASS="Cuongnv@123" # CHANGE THIS!
 
 echo "🐘 Setting up PostgreSQL..."
 
