@@ -66,8 +66,24 @@ async def check_user_can_receive(redis, user: User) -> bool:
 
     # VIP users: always can receive (if not in quiet mode)
     if user.plan_type == PlanType.VIP:
-        if user.expiry_date and user.expiry_date > datetime.utcnow():
-            return True
+        # Ensure both datetimes are offset-naive or offset-aware
+        # user.expiry_date is usually naive (from DB)
+        # datetime.utcnow() is naive
+        # If user.expiry_date is aware, convert utcnow to aware
+        now = datetime.utcnow()
+        if user.expiry_date:
+            expiry = user.expiry_date
+            if expiry.tzinfo is not None and now.tzinfo is None:
+                # Make now aware (UTC)
+                from datetime import timezone
+                now = now.replace(tzinfo=timezone.utc)
+            elif expiry.tzinfo is None and now.tzinfo is not None:
+                 # Make expiry aware (assume UTC)
+                 from datetime import timezone
+                 expiry = expiry.replace(tzinfo=timezone.utc)
+            
+            if expiry > now:
+                return True
         # VIP expired, treat as FREE
     
     # FREE users: check daily limit
