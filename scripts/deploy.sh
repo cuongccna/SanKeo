@@ -27,6 +27,9 @@ pip install -r requirements.txt
 # Note: Assuming you have a migration script or using alembic. 
 # For now, we run the specific migration scripts we created.
 echo "🗄️ Running Database Migrations..."
+# Initialize DB (Create tables if not exist)
+python init_db.py
+# Run specific migrations for updates
 python -m scripts.migrate_affiliate
 python -m scripts.migrate_quiet_blacklist
 
