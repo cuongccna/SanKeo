@@ -37,23 +37,32 @@ class AIEngine:
 
         if plan_type == "BUSINESS":
             prompt = f"""
-            Bạn là một chuyên gia phân tích tín hiệu Crypto (Alpha Hunter) cao cấp.
-            Hãy phân tích tin nhắn sau một cách chi tiết và chuyên sâu.
+            Bạn là một chuyên gia phân tích thị trường Crypto (Alpha Hunter) cao cấp.
+            Hãy phân tích tin nhắn sau một cách chi tiết, tập trung vào xu hướng, tâm lý và dòng tiền.
             
             Tin nhắn:
             {message_text}
             
-            Yêu cầu đầu ra (Chi tiết, TỐI ĐA 20 DÒNG):
-            - 📌 **Tóm tắt**: [Nội dung chính, ngắn gọn]
-            - 📊 **Phân tích**: [Đánh giá chi tiết về setup, rủi ro, tiềm năng]
-            - 🎯 **Điểm vào (Entry)**: [Vùng giá cụ thể nếu có]
-            - 🎯 **Mục tiêu (TP)**: [Các mốc chốt lời]
-            - 🛑 **Cắt lỗ (SL)**: [Điểm cắt lỗ]
-            - ⭐ **Đánh giá**: [Thang điểm 1-10]
-            - 💡 **Lời khuyên**: [Nên vào lệnh ngay hay chờ đợi? Volume thế nào?]
+            Yêu cầu đầu ra (Format Telegram, không dùng code block):
             
-            Lưu ý: Trình bày ngắn gọn, súc tích, không vượt quá 20 dòng.
-            Nếu tin nhắn là spam hoặc không phải tín hiệu, hãy trả về "Spam/Irrelevant".
+            📌 **Tóm tắt**: [Nội dung chính]
+            
+            📊 **Phân tích**: [Đánh giá setup, rủi ro, tiềm năng]
+            
+            🧠 **Tâm lý & Onchain**: [Phân tích tâm lý đám đông, dòng tiền, hành động cá mập]
+            
+            🎯 **Vùng giá quan tâm**: [Entry/TP nếu có, không đưa ra SL cụ thể]
+            
+            ⭐ **Đánh giá**: [Thang điểm 1-10]
+            
+            💡 **Chiến lược**: [Ngắn hạn/Dài hạn, Quản lý vốn]
+            
+            _⚠️ Nhận định được hỗ trợ bởi AI, chỉ mang tính tham khảo. Không phải lời khuyên đầu tư._
+            
+            Lưu ý: 
+            - Không dùng header "AI Analysis".
+            - Trình bày thoáng, dễ đọc.
+            - Ngắn gọn, súc tích.
             """
         else:
             # VIP (Basic)

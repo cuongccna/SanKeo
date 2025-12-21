@@ -709,6 +709,17 @@ Chúc bạn săn kèo thành công! 🚀
                     
                     continue
 
+                # Handle Template Report
+                if notification.get("type") == "TEMPLATE_REPORT":
+                    user_id = notification["user_id"]
+                    message_text = notification["message"]
+                    try:
+                        await bot.send_message(user_id, message_text, parse_mode="Markdown")
+                        logger.info(f"Template report sent to {user_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send template report to {user_id}: {e}")
+                    continue
+
                 # Handle Keyword Match Notification (QUEUE_NOTIFICATIONS)
                 user_id = notification["user_id"]
                 msg_data = notification["message"]
@@ -737,9 +748,8 @@ Chúc bạn săn kèo thành công! 🚀
                     notification_text += f"[👉 Xem tin nhắn gốc]({message_link})"
 
                 if ai_analysis:
-                    # Wrap AI analysis in code block to prevent markdown errors and distinguish content
-                    safe_analysis = ai_analysis.replace("`", "'")
-                    notification_text += f"\n\n🤖 *AI Analysis:*\n```\n{safe_analysis}\n```"
+                    # Append AI analysis directly (formatted by AI Engine)
+                    notification_text += f"\n\n{ai_analysis}"
                 
                 # 1. Send to User (DM)
                 try:
