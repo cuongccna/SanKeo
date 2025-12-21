@@ -297,7 +297,14 @@ async def casso_webhook(request: Request):
             if data.transferType == "in":
                 user_id = parse_user_id_from_content(data.content)
                 if user_id and data.transferAmount >= VIP_PRICE:
-                    await process_vip_upgrade(user_id, data.id, data.transferAmount)
+                    success = await process_vip_upgrade(user_id, data.id, data.transferAmount)
+                    if success:
+                        # Get updated user info for notification
+                        async with AsyncSessionLocal() as session:
+                            result = await session.execute(select(User).where(User.id == user_id))
+                            user = result.scalar_one_or_none()
+                            if user:
+                                await notify_user_payment(user_id, data.transferAmount, user.expiry_date)
         
         return {"success": True}
         

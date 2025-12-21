@@ -40,6 +40,7 @@ logger = get_logger("bot")
 
 # Queue name
 QUEUE_NOTIFICATIONS = "queue:notifications"
+QUEUE_PAYMENT_NOTIFICATIONS = "queue:payment_notifications"
 
 # Free user limits
 FREE_MAX_KEYWORDS = 3
@@ -150,6 +151,14 @@ async def cmd_start_deep_link(message: types.Message, command: CommandObject):
             
     user = await get_or_create_user(message.from_user.id, message.from_user.username, referrer_id)
     
+    plan_display = "🆓 FREE"
+    if user.plan_type == PlanType.VIP:
+        plan_display = "💎 VIP"
+    elif user.plan_type == PlanType.BUSINESS:
+        plan_display = "🏢 BUSINESS"
+        
+    keyword_limit = str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else "∞"
+
     welcome_text = f"""
 🎯 **Chào mừng đến với Personal Alpha Hunter!**
 
@@ -158,8 +167,8 @@ Bot sẽ giúp bạn:
 • Nhận thông báo real-time khi có tin nhắn match
 
 📊 **Tài khoản của bạn:**
-• Gói: {'💎 VIP' if user.plan_type == PlanType.VIP else '🆓 FREE'}
-• Giới hạn từ khóa: {FREE_MAX_KEYWORDS if user.plan_type == PlanType.FREE else '∞'}
+• Gói: {plan_display}
+• Giới hạn từ khóa: {keyword_limit}
 
 Chọn chức năng bên dưới:
 """
@@ -170,6 +179,14 @@ async def cmd_start(message: types.Message):
     """Handle /start command."""
     user = await get_or_create_user(message.from_user.id, message.from_user.username)
     
+    plan_display = "🆓 FREE"
+    if user.plan_type == PlanType.VIP:
+        plan_display = "💎 VIP"
+    elif user.plan_type == PlanType.BUSINESS:
+        plan_display = "🏢 BUSINESS"
+        
+    keyword_limit = str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else "∞"
+
     welcome_text = f"""
 🎯 **Chào mừng đến với Personal Alpha Hunter!**
 
@@ -178,8 +195,8 @@ Bot sẽ giúp bạn:
 • Nhận thông báo real-time khi có tin nhắn match
 
 📊 **Tài khoản của bạn:**
-• Gói: {'💎 VIP' if user.plan_type == PlanType.VIP else '🆓 FREE'}
-• Giới hạn từ khóa: {FREE_MAX_KEYWORDS if user.plan_type == PlanType.FREE else '∞'}
+• Gói: {plan_display}
+• Giới hạn từ khóa: {keyword_limit}
 
 Chọn chức năng bên dưới:
 """
@@ -561,12 +578,42 @@ async def notification_worker():
     
     while True:
         try:
-            result = await redis.brpop(QUEUE_NOTIFICATIONS, timeout=1)
+            result = await redis.brpop([QUEUE_NOTIFICATIONS, QUEUE_PAYMENT_NOTIFICATIONS], timeout=1)
             
             if result:
-                _, data = result
+                queue_name, data = result
                 notification = json.loads(data)
                 
+                if queue_name == QUEUE_PAYMENT_NOTIFICATIONS:
+                    # Handle Payment Notification
+                    user_id = notification.get("user_id")
+                    amount = notification.get("amount", 0)
+                    expiry_str = notification.get("expiry_date", "")
+                    
+                    try:
+                        expiry_date = datetime.fromisoformat(expiry_str)
+                        expiry_display = expiry_date.strftime("%d/%m/%Y")
+                    except:
+                        expiry_display = expiry_str
+
+                    payment_text = f"""
+✅ **Thanh toán thành công!**
+
+Cảm ơn bạn đã nâng cấp tài khoản.
+💰 Số tiền: {amount:,.0f} VND
+📅 Hạn sử dụng: {expiry_display}
+
+Chúc bạn săn kèo thành công! 🚀
+"""
+                    try:
+                        await bot.send_message(user_id, payment_text, parse_mode="Markdown")
+                        logger.info(f"Payment notification sent to {user_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send payment notification to {user_id}: {e}")
+                    
+                    continue
+
+                # Handle Keyword Match Notification (QUEUE_NOTIFICATIONS)
                 user_id = notification["user_id"]
                 msg_data = notification["message"]
                 keyword = notification["matched_keyword"]
