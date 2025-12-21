@@ -18,6 +18,19 @@ class AIEngine:
             logger.error(f"Failed to initialize AI Engine: {e}")
             self.model = None
 
+    async def generate_text(self, prompt: str) -> str:
+        """
+        Generic method to generate text from prompt.
+        """
+        if not self.model:
+            return ""
+        try:
+            response = await self.model.generate_content_async(prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"AI Generation failed: {e}")
+            return ""
+
     async def analyze_message(self, message_text: str, plan_type: str = "VIP") -> str:
         if not self.model:
             return "AI Analysis Unavailable (Missing Key)"

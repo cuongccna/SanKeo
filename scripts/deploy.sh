@@ -64,6 +64,7 @@ python3 init_db.py
 python3 -m scripts.migrate_affiliate
 python3 -m scripts.migrate_quiet_blacklist
 python3 -m scripts.migrate_business_plan
+python3 -m scripts.migrate_source_config
 
 # 5. Reload PM2
 echo "🔄 Reloading PM2 processes..."

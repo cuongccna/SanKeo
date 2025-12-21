@@ -22,6 +22,7 @@ from src.database.db import AsyncSessionLocal
 from src.database.models import FilterRule as DBFilterRule, User, PlanType
 from src.worker.filter_engine import MessageProcessor, FilterRule as EngineFilterRule
 from src.worker.ai_engine import ai_engine
+from src.worker.strategies import strategy_processor
 
 logger = get_logger("worker")
 
@@ -107,6 +108,10 @@ async def process_message(redis, message_data: dict):
     """
     Process a single message using Filter Engine.
     """
+    # 0. Strategy Processing (Enrich/Format message based on Tag)
+    # This happens BEFORE filtering, so users filter on the processed text.
+    message_data = await strategy_processor.process(message_data)
+
     async with AsyncSessionLocal() as session:
         # Fetch active rules with user info
         result = await session.execute(

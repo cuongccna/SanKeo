@@ -10,6 +10,21 @@ class PlanType(str, enum.Enum):
     VIP = "VIP"
     BUSINESS = "BUSINESS"
 
+class SourceTag(str, enum.Enum):
+    NEWS_VIP = "NEWS_VIP"
+    SIGNAL = "SIGNAL"
+    ONCHAIN = "ONCHAIN"
+    NORMAL = "NORMAL"
+
+class SourceConfig(Base):
+    __tablename__ = "source_configs"
+
+    chat_id = Column(BigInteger, primary_key=True, index=True) # Channel/Group ID
+    tag = Column(String, default=SourceTag.NORMAL) # Stored as string
+    priority = Column(Integer, default=1)
+    name = Column(String, nullable=True) # Optional: Name of the channel for easier management
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class User(Base):
     __tablename__ = "users"
 
