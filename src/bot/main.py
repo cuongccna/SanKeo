@@ -87,6 +87,7 @@ class AddKeywordState(StatesGroup):
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📚 Kho từ khóa mẫu", callback_data="preset_libraries")],
+        [InlineKeyboardButton(text="🤖 Smart AI Templates (VIP)", callback_data="smart_templates")],
         [InlineKeyboardButton(text="➕ Thêm từ khóa", callback_data="add_keyword")],
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
         [InlineKeyboardButton(text="💎 Nâng cấp Gói", callback_data="upgrade_menu")],
@@ -811,6 +812,23 @@ async def callback_affiliate_info(callback: CallbackQuery):
 - Hoa hồng được cộng trực tiếp vào số dư.
     """
     await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+
+@dp.callback_query(F.data == "smart_templates")
+async def callback_smart_templates(callback: CallbackQuery):
+    """Handle Smart AI Templates button."""
+    # Reuse the logic from cmd_templates in handlers/templates.py
+    # Since we can't easily call the handler directly with a Message object from a CallbackQuery,
+    # we'll import the logic or redirect.
+    # Better approach: Call the handler function directly if it accepts Union[Message, CallbackQuery]
+    # or just replicate the logic/call a shared function.
+    
+    # Let's import the handler function
+    from src.bot.handlers.templates import cmd_templates
+    
+    # We need to pass a Message-like object or adapt the handler.
+    # The handler expects a Message. Let's adapt it.
+    await cmd_templates(callback.message, user_id=callback.from_user.id)
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "settings_menu")
