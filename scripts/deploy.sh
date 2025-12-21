@@ -68,18 +68,17 @@ echo "🗄️ Setting up Database..."
 # Initialize DB (Create tables if not exist)
 python3 init_db.py
 
-# Run Seeds (Idempotent)
-echo "🌱 Seeding Data..."
-python3 -m scripts.seed_templates
-python3 -m scripts.seed_data
-
-# Run Migrations (Only needed for existing DBs with old schema)
-# We keep them just in case, but init_db handles new tables.
-echo "🔄 Running Migrations (if needed)..."
+# Run Migrations (CRITICAL: Run BEFORE seeding to ensure schema is correct)
+echo "🔄 Running Migrations..."
 python3 -m scripts.migrate_affiliate || true
 python3 -m scripts.migrate_quiet_blacklist || true
 python3 -m scripts.migrate_business_plan || true
 python3 -m scripts.migrate_source_config || true
+
+# Run Seeds (Idempotent)
+echo "🌱 Seeding Data..."
+python3 -m scripts.seed_templates
+python3 -m scripts.seed_data
 
 # 8. PM2 Reload
 echo "🔄 Reloading PM2 processes..."
