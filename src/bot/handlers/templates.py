@@ -72,7 +72,9 @@ Hệ thống sẽ tự động gửi báo cáo định kỳ cho bạn.
 
 @router.callback_query(F.data.startswith("tpl_toggle_"))
 async def on_template_toggle(callback: types.CallbackQuery):
-    code = callback.data.split("_")[2]
+    # Fix: Handle codes with underscores (e.g. WHALE_HUNTING)
+    # callback.data is "tpl_toggle_WHALE_HUNTING"
+    code = callback.data.replace("tpl_toggle_", "")
     user_id = callback.from_user.id
     
     async with AsyncSessionLocal() as session:
