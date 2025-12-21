@@ -58,7 +58,7 @@ async def load_source_configs():
             result = await session.execute(select(SourceConfig))
             configs = result.scalars().all()
             SOURCE_CONFIGS = {
-                cfg.chat_id: {"tag": cfg.tag, "priority": cfg.priority} 
+                cfg.chat_id: {"tags": cfg.tags, "priority": cfg.priority} 
                 for cfg in configs
             }
             logger.info(f"Loaded {len(SOURCE_CONFIGS)} source configs.")
@@ -170,12 +170,16 @@ async def message_handler(event):
         
         # Tagging Logic
         source_config = SOURCE_CONFIGS.get(event.chat_id)
-        tag = "NORMAL"
+        tags = ["NORMAL"]
         priority = 1
         if source_config:
-            tag = source_config.get("tag", "NORMAL")
+            tags = source_config.get("tags", ["NORMAL"])
+            # Ensure tags is a list
+            if not isinstance(tags, list):
+                tags = [tags] if tags else ["NORMAL"]
+                
             priority = source_config.get("priority", 1)
-            logger.debug(f"Tagged message from {event.chat_id} as {tag} (Priority: {priority})")
+            logger.debug(f"Tagged message from {event.chat_id} as {tags} (Priority: {priority})")
 
         # Serialize message data
         message_data = {
@@ -187,7 +191,7 @@ async def message_handler(event):
             "sender_id": event.sender_id,
             "message_link": f"https://t.me/c/{str(event.chat_id)[4:]}/{event.id}" if str(event.chat_id).startswith("-100") else None,
             "image_path": image_path,
-            "tag": tag,
+            "tags": tags,
             "priority": priority
         }
         

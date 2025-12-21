@@ -23,6 +23,8 @@ from src.database.models import FilterRule as DBFilterRule, User, PlanType
 from src.worker.filter_engine import MessageProcessor, FilterRule as EngineFilterRule
 from src.worker.ai_engine import ai_engine
 from src.worker.strategies import strategy_processor
+from src.worker.analyzers import template_processor
+from src.worker.scheduler import template_scheduler
 
 logger = get_logger("worker")
 
@@ -111,6 +113,18 @@ async def process_message(redis, message_data: dict):
     # 0. Strategy Processing (Enrich/Format message based on Tag)
     # This happens BEFORE filtering, so users filter on the processed text.
     message_data = await strategy_processor.process(message_data)
+
+    # Buffer message for AI Templates
+    try:
+        tags = message_data.get("tags", ["NORMAL"])
+        # Backward compatibility
+        if not tags and "tag" in message_data:
+            tags = [message_data["tag"]]
+            
+        for tag in tags:
+            await template_processor.buffer_message(tag, message_data)
+    except Exception as e:
+        logger.error(f"Failed to buffer message: {e}")
 
     async with AsyncSessionLocal() as session:
         # Fetch active rules with user info
@@ -257,6 +271,9 @@ async def main():
     logger.info("WORKER SERVICE - Starting...")
     logger.info("=" * 50)
     
+    # Start Scheduler in background
+    asyncio.create_task(template_scheduler.start())
+
     redis = await get_redis()
     
     # Test Redis connection

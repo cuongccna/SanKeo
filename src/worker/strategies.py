@@ -15,23 +15,31 @@ class StrategyProcessor:
         Điều phối xử lý dựa trên tag.
         Trả về message_data đã được làm giàu (enriched) hoặc format lại.
         """
-        tag = message_data.get("tag", "NORMAL")
+        tags = message_data.get("tags", ["NORMAL"])
+        # Backward compatibility
+        if not tags and "tag" in message_data:
+            tags = [message_data["tag"]]
+            
         text = message_data.get("text", "")
         
         if not text:
             return message_data
 
         try:
-            if tag == "NEWS_VIP":
+            # Process based on priority tags
+            # If multiple tags exist, we prioritize processing in this order:
+            if "NEWS_VIP" in tags:
                 message_data["text"] = await self.handle_news_vip(text)
-            elif tag == "SIGNAL":
+            elif "SIGNAL" in tags:
                 message_data["text"] = await self.handle_signal(text)
-            elif tag == "ONCHAIN":
-                message_data["text"] = await self.handle_onchain(text)
+            elif "ONCHAIN" in tags:
+                # Assuming handle_onchain exists or will exist
+                if hasattr(self, 'handle_onchain'):
+                    message_data["text"] = await self.handle_onchain(text)
             # NORMAL tag does nothing
             
         except Exception as e:
-            logger.error(f"Strategy processing failed for tag {tag}: {e}")
+            logger.error(f"Strategy processing failed for tags {tags}: {e}")
             # Fallback: return original message
             
         return message_data

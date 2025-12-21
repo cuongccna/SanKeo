@@ -31,7 +31,7 @@ from src.common.config import settings
 from src.common.utils import escape_markdown
 from src.database.db import AsyncSessionLocal
 from src.database.models import User, FilterRule, PlanType, UserForwardingTarget
-from src.bot.handlers import admin, presets, settings as bot_settings
+from src.bot.handlers import admin, presets, settings as bot_settings, templates
 
 load_dotenv()
 
@@ -62,6 +62,7 @@ dp = Dispatcher(storage=storage)
 dp.include_router(admin.router)
 dp.include_router(presets.router)
 dp.include_router(bot_settings.router)
+dp.include_router(templates.router)
 
 class LoggingMiddleware(BaseMiddleware):
     async def __call__(

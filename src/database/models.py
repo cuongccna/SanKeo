@@ -1,9 +1,28 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Time
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Time, Text, JSON
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 import enum
 
 Base = declarative_base()
+
+class AnalysisTemplate(Base):
+    __tablename__ = "analysis_templates"
+
+    code = Column(String, primary_key=True) # e.g., 'WHALE_FLOW'
+    name = Column(String, nullable=False)
+    required_tags = Column(JSON, nullable=False) # List of tags e.g. ['ONCHAIN', 'PRICE_ACTION']
+    time_window_minutes = Column(Integer, default=60)
+    prompt_template = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class UserTemplateSubscription(Base):
+    __tablename__ = "user_template_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    template_code = Column(String, ForeignKey("analysis_templates.code"), nullable=False)
+    last_sent_at = Column(DateTime(timezone=True), nullable=True) # Thời điểm gửi báo cáo gần nhất
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class PlanType(str, enum.Enum):
     FREE = "FREE"
@@ -20,9 +39,10 @@ class SourceConfig(Base):
     __tablename__ = "source_configs"
 
     chat_id = Column(BigInteger, primary_key=True, index=True) # Channel/Group ID
-    tag = Column(String, default=SourceTag.NORMAL) # Stored as string
+    name = Column(String, nullable=True)
+    tags = Column(JSON, default=[]) # List of tags e.g. ['NEWS_VIP', 'SIGNAL']
     priority = Column(Integer, default=1)
-    name = Column(String, nullable=True) # Optional: Name of the channel for easier management
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class User(Base):

@@ -3,13 +3,23 @@
 # Deploy Script for SanKeo Project
 # Usage: ./scripts/deploy.sh
 
+set -e
+
 echo "🚀 Starting Deployment..."
 
 # 1. Pull latest code
 echo "📥 Pulling latest code from Git..."
 git pull origin main
 
-# 2. Activate Virtual Environment
+# 2. System Dependencies
+echo "🛠️ Checking system dependencies..."
+if ! command -v npm &> /dev/null; then
+    echo "⚠️ Node.js/npm not found! Installing..."
+    sudo apt update
+    sudo apt install -y nodejs npm
+fi
+
+# 3. Activate Virtual Environment
 echo "🔌 Activating Virtual Environment..."
 # Ensure we are in the project root
 cd "$(dirname "$0")/.."
@@ -30,7 +40,7 @@ fi
 # Activate venv
 source ./venv/bin/activate || { echo "❌ Failed to activate venv"; exit 1; }
 
-# 3. Install Dependencies
+# 4. Install Dependencies
 echo "📦 Installing dependencies..."
 
 # Check and install Redis if missing
@@ -48,33 +58,39 @@ pip install -r requirements.txt
 # Explicitly install uvicorn to ensure it's available for PM2
 pip install uvicorn[standard]
 
-# Ensure sessions directory exists
-if [ ! -d "sessions" ]; then
-    echo "📂 Creating sessions directory..."
-    mkdir -p sessions
-fi
+# 6. Directory Setup
+echo "📂 Ensuring directories exist..."
+mkdir -p sessions logs temp_images
 
-# 4. Run Database Migrations (if any)
-# Note: Assuming you have a migration script or using alembic. 
-# For now, we run the specific migration scripts we created.
-echo "🗄️ Running Database Migrations..."
+# 7. Database Setup & Migrations
+echo "🗄️ Setting up Database..."
+
 # Initialize DB (Create tables if not exist)
 python3 init_db.py
-# Run specific migrations for updates
-python3 -m scripts.migrate_affiliate
-python3 -m scripts.migrate_quiet_blacklist
-python3 -m scripts.migrate_business_plan
-python3 -m scripts.migrate_source_config
 
-# 5. Reload PM2
+# Run Seeds (Idempotent)
+echo "🌱 Seeding Data..."
+python3 -m scripts.seed_templates
+python3 -m scripts.seed_data
+
+# Run Migrations (Only needed for existing DBs with old schema)
+# We keep them just in case, but init_db handles new tables.
+echo "🔄 Running Migrations (if needed)..."
+python3 -m scripts.migrate_affiliate || true
+python3 -m scripts.migrate_quiet_blacklist || true
+python3 -m scripts.migrate_business_plan || true
+python3 -m scripts.migrate_source_config || true
+
+# 8. PM2 Reload
 echo "🔄 Reloading PM2 processes..."
-if command -v pm2 &> /dev/null; then
-    pm2 reload ecosystem.config.js --update-env
-    pm2 save
-else
-    echo "❌ PM2 is not installed. Please install it globally: npm install pm2 -g"
-    exit 1
+if ! command -v pm2 &> /dev/null; then
+    echo "⚠️ PM2 not found! Installing globally..."
+    sudo npm install -g pm2
 fi
+
+# Start/Reload ecosystem
+pm2 startOrReload ecosystem.config.js --update-env
+pm2 save
 
 echo "✅ Deployment Complete!"
 pm2 status
