@@ -29,6 +29,10 @@ API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 SESSION_NAME = 'sessions/ingestor_session'
 
+# Get Bot ID to prevent self-loop
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_ID = int(BOT_TOKEN.split(":")[0]) if ":" in BOT_TOKEN else 0
+
 logger = get_logger("ingestor")
 
 # Queue name
@@ -124,9 +128,14 @@ async def message_handler(event):
             logger.debug(f"Ignored message from blacklisted channel: {event.chat_id}")
             return
 
-        # Bỏ qua tin nhắn từ chính mình (Commented out for testing)
-        # if event.out:
-        #     return
+        # Prevent Infinite Loop: Ignore messages from the Bot itself
+        if event.sender_id == BOT_ID:
+            logger.debug(f"Ignored message from Bot ({BOT_ID}) to prevent loop.")
+            return
+
+        # Bỏ qua tin nhắn từ chính mình (Ingestor account)
+        if event.out:
+            return
         
         # Bỏ qua tin nhắn private (chỉ lắng nghe groups/channels)
         if event.is_private:
