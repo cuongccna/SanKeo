@@ -628,19 +628,23 @@ Chúc bạn săn kèo thành công! 🚀
                 # Safe keyword display (remove backticks to avoid breaking markdown code block)
                 safe_keyword = keyword.replace("`", "")
 
-                notification_text = f"""
-🔔 **Match: `{safe_keyword}`**
+                # Compact Design
+                # 🔔 Chat Title | 🎯 Keyword
+                # 
+                # Content...
+                # 
+                # [Link]
+                
+                notification_text = f"🔔 *{chat_title}* | 🎯 `{safe_keyword}`\n\n"
+                notification_text += f"{text}\n\n"
+                
+                if message_link:
+                    notification_text += f"[👉 Xem tin nhắn gốc]({message_link})"
 
-📢 **Từ:** {chat_title}
-
-💬 {text}
-
-{"🔗 " + message_link if message_link else ""}
-"""
                 if ai_analysis:
                     # Wrap AI analysis in code block to prevent markdown errors and distinguish content
                     safe_analysis = ai_analysis.replace("`", "'")
-                    notification_text += f"\n🤖 **AI Analysis:**\n```\n{safe_analysis}\n```"
+                    notification_text += f"\n\n🤖 *AI Analysis:*\n```\n{safe_analysis}\n```"
                 
                 # 1. Send to User (DM)
                 try:
