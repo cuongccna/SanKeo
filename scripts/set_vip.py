@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from datetime import datetime, timedelta
 from src.database.db import AsyncSessionLocal
 from src.database.models import User, PlanType
 from src.common.config import settings
@@ -15,16 +16,20 @@ async def set_vip(user_id: int):
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         
+        # Default 30 days
+        expiry = datetime.utcnow() + timedelta(days=30)
+
         if user:
             user.plan_type = PlanType.VIP
+            user.expiry_date = expiry
             await session.commit()
-            print(f"User {user_id} updated to VIP.")
+            print(f"User {user_id} updated to VIP. Expiry: {expiry}")
         else:
             print(f"User {user_id} not found. Creating as VIP...")
-            user = User(id=user_id, plan_type=PlanType.VIP)
+            user = User(id=user_id, plan_type=PlanType.VIP, expiry_date=expiry)
             session.add(user)
             await session.commit()
-            print(f"User {user_id} created as VIP.")
+            print(f"User {user_id} created as VIP. Expiry: {expiry}")
 
 if __name__ == "__main__":
     user_id = settings.ADMIN_ID

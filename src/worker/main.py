@@ -64,8 +64,8 @@ async def check_user_can_receive(redis, user: User) -> bool:
             # logger.debug(f"User {user.id} is in Quiet Mode ({start} - {end})")
             return False
 
-    # VIP users: always can receive (if not in quiet mode)
-    if user.plan_type == PlanType.VIP:
+    # VIP/BUSINESS users: always can receive (if not in quiet mode)
+    if user.plan_type in [PlanType.VIP, PlanType.BUSINESS]:
         # Ensure both datetimes are offset-naive or offset-aware
         # user.expiry_date is usually naive (from DB)
         # datetime.utcnow() is naive

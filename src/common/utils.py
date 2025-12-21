@@ -19,3 +19,13 @@ async def safe_execution(coroutine: Callable[..., Any], *args, **kwargs) -> Any:
         except Exception as e:
             logger.error(f"Error in safe_execution: {e}")
             raise e
+
+
+def escape_markdown(text: str) -> str:
+    """
+    Escape special characters for Telegram Markdown (legacy).
+    Escapes: _ * [ `
+    """
+    if not text:
+        return ""
+    return text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")

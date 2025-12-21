@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from src.common.logger import get_logger
 from src.common.redis_client import get_redis
 from src.common.config import settings
+from src.common.utils import escape_markdown
 from src.database.db import AsyncSessionLocal
 from src.database.models import User, FilterRule, PlanType, UserForwardingTarget
 from src.bot.handlers import admin, presets, settings as bot_settings
@@ -500,7 +501,7 @@ async def callback_my_account(callback: CallbackQuery):
         # Escape username for Markdown
         username = user.username or 'N/A'
         if username != 'N/A':
-            username = username.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
+            username = escape_markdown(username)
 
         text = f"""
 👤 **Thông tin tài khoản**
@@ -619,13 +620,16 @@ Chúc bạn săn kèo thành công! 🚀
                 keyword = notification["matched_keyword"]
                 
                 # Format notification message
-                chat_title = msg_data.get("chat_title", "Unknown")
-                text = msg_data.get("text", "")[:500]  # Truncate long messages
+                chat_title = escape_markdown(msg_data.get("chat_title", "Unknown"))
+                text = escape_markdown(msg_data.get("text", "")[:500])  # Truncate long messages
                 message_link = msg_data.get("message_link", "")
                 ai_analysis = notification.get("ai_analysis")
                 
+                # Safe keyword display (remove backticks to avoid breaking markdown code block)
+                safe_keyword = keyword.replace("`", "")
+
                 notification_text = f"""
-🔔 **Match: `{keyword}`**
+🔔 **Match: `{safe_keyword}`**
 
 📢 **Từ:** {chat_title}
 
@@ -634,7 +638,9 @@ Chúc bạn săn kèo thành công! 🚀
 {"🔗 " + message_link if message_link else ""}
 """
                 if ai_analysis:
-                    notification_text += f"\n🤖 **AI Analysis:**\n{ai_analysis}"
+                    # Wrap AI analysis in code block to prevent markdown errors and distinguish content
+                    safe_analysis = ai_analysis.replace("`", "'")
+                    notification_text += f"\n🤖 **AI Analysis:**\n```\n{safe_analysis}\n```"
                 
                 # 1. Send to User (DM)
                 try:
