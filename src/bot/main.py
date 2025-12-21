@@ -7,6 +7,7 @@ import sys
 import asyncio
 import json
 import random
+import re
 from urllib.parse import quote
 from datetime import datetime, timedelta
 
@@ -17,7 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from dotenv import load_dotenv
 from typing import Callable, Dict, Any, Awaitable
 
@@ -45,6 +46,12 @@ QUEUE_PAYMENT_NOTIFICATIONS = "queue:payment_notifications"
 
 # Free user limits
 FREE_MAX_KEYWORDS = 3
+
+# Keyword Validation Config
+KEYWORD_BLACKLIST = {
+    "kèo", "mua", "bán", "coin", "news", "admin", "anh em", 
+    "long", "short", "tp", "sl", "entry", "target", "channel", "group"
+}
 
 # Initialize bot
 bot = Bot(token=BOT_TOKEN)
@@ -350,7 +357,17 @@ async def callback_add_keyword(callback: CallbackQuery, state: FSMContext):
         return
     
     await callback.message.edit_text(
-        "📝 **Thêm từ khóa**\n\nNhập từ khóa bạn muốn theo dõi:\n\n_Hỗ trợ Regex. Ví dụ: ETH|BTC, [Rr]ecruit_\n\n⚠️ **Lưu ý:** Nếu đang ở trong nhóm, hãy **Reply** tin nhắn này để bot nhận được!",
+        """📝 **Thêm từ khóa**
+
+Nhập từ khóa bạn muốn theo dõi.
+
+💡 **Hướng dẫn:**
+- Nhập 1 từ khóa: `Bitcoin`
+- Nhập nhiều từ khóa (cách nhau bằng dấu phẩy): `BTC, ETH, SOL`
+- Độ dài: 2 - 50 ký tự.
+- Không chứa ký tự đặc biệt quá nhiều.
+
+⚠️ **Lưu ý:** Nếu đang ở trong nhóm, hãy **Reply** tin nhắn này để bot nhận được!""",
         reply_markup=get_back_keyboard(),
         parse_mode="Markdown"
     )
@@ -524,34 +541,111 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
     """Process keyword input."""
     logger.info(f"Processing keyword from user {message.from_user.id}: {message.text}")
     
-    keyword = message.text.strip()
+    raw_text = message.text.strip()
     
-    if not keyword:
+    if not raw_text:
         await message.answer("⚠️ Từ khóa không được để trống!")
         return
     
-    if len(keyword) > 100:
-        await message.answer("⚠️ Từ khóa quá dài (tối đa 100 ký tự)!")
-        return
+    # Split by comma or newline to support multiple keywords
+    keywords = [k.strip() for k in re.split(r'[,\n]', raw_text) if k.strip()]
     
+    if not keywords:
+        await message.answer("⚠️ Không tìm thấy từ khóa hợp lệ!")
+        return
+
+    added_keywords = []
+    failed_keywords = []
+
     # Add to database
     try:
         async with AsyncSessionLocal() as session:
-            new_rule = FilterRule(
-                user_id=message.from_user.id,
-                keyword=keyword,
-                is_active=True
-            )
-            session.add(new_rule)
+            # Check user plan for limits
+            result = await session.execute(select(User).where(User.id == message.from_user.id))
+            user = result.scalar_one_or_none()
+            
+            # Count existing keywords
+            result = await session.execute(select(func.count(FilterRule.id)).where(FilterRule.user_id == message.from_user.id))
+            current_count = result.scalar() or 0
+            
+            for raw_keyword in keywords:
+                # 1. Normalization: Lowercase & Strip
+                keyword = raw_keyword.lower().strip()
+                
+                # 2. Remove special characters (Keep alphanumeric, spaces, and $)
+                # This removes emojis and punctuation like .,!?- etc.
+                keyword = re.sub(r'[^\w\s$]', '', keyword)
+                
+                if not keyword:
+                    failed_keywords.append(f"{raw_keyword} (Không hợp lệ sau khi chuẩn hóa)")
+                    continue
+
+                # 3. Length Check
+                # Rule: >= 3 chars. Exception: 2 chars allowed if it starts with $ (e.g. $op)
+                # Since we stripped special chars, $op is 3 chars. op is 2 chars.
+                # So simple check: len < 3 is invalid.
+                if len(keyword) < 3:
+                    failed_keywords.append(f"{keyword} (Quá ngắn, tối thiểu 3 ký tự. Ví dụ: btc, $op)")
+                    continue
+                
+                if len(keyword) > 50:
+                    failed_keywords.append(f"{keyword} (Quá dài, tối đa 50 ký tự)")
+                    continue
+                
+                # 4. Blacklist Check
+                if keyword in KEYWORD_BLACKLIST:
+                    failed_keywords.append(f"{keyword} (Từ khóa bị chặn vì quá thông dụng)")
+                    continue
+                
+                # 5. Must contain at least one alphanumeric character (prevent just "$$$")
+                if not re.search(r'[a-zA-Z0-9]', keyword):
+                    failed_keywords.append(f"{keyword} (Không hợp lệ, phải chứa chữ hoặc số)")
+                    continue
+
+                # Check limit for FREE users
+                if user.plan_type == PlanType.FREE and current_count >= FREE_MAX_KEYWORDS:
+                    failed_keywords.append(f"{keyword} (Đạt giới hạn gói FREE: tối đa {FREE_MAX_KEYWORDS} từ)")
+                    continue
+
+                # Check duplicate
+                # Ideally we check DB, but for simplicity let's just try insert
+                # Or check if exists
+                exists = await session.execute(
+                    select(FilterRule).where(
+                        FilterRule.user_id == message.from_user.id,
+                        FilterRule.keyword == keyword
+                    )
+                )
+                if exists.scalar_one_or_none():
+                    failed_keywords.append(f"{keyword} (Đã tồn tại)")
+                    continue
+
+                new_rule = FilterRule(
+                    user_id=message.from_user.id,
+                    keyword=keyword,
+                    is_active=True
+                )
+                session.add(new_rule)
+                added_keywords.append(keyword)
+                current_count += 1
+            
             await session.commit()
         
         await state.clear()
+        
+        msg = ""
+        if added_keywords:
+            msg += f"✅ Đã thêm {len(added_keywords)} từ khóa:\n" + "\n".join([f"- `{k}`" for k in added_keywords])
+        
+        if failed_keywords:
+            msg += "\n\n⚠️ Không thể thêm:\n" + "\n".join([f"- {k}" for k in failed_keywords])
+            
         await message.answer(
-            f"✅ Đã thêm từ khóa: `{keyword}`\n\nBạn sẽ nhận thông báo khi có tin nhắn chứa từ khóa này.",
+            msg,
             reply_markup=get_main_keyboard(),
             parse_mode="Markdown"
         )
-        logger.info(f"User {message.from_user.id} added keyword: {keyword}")
+        logger.info(f"User {message.from_user.id} added keywords: {added_keywords}")
     except Exception as e:
         logger.error(f"Error adding keyword: {e}")
         await message.answer("❌ Có lỗi xảy ra. Vui lòng thử lại!")
