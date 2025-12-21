@@ -26,6 +26,21 @@ async def migrate():
         else:
             print("✅ Column 'tags' already exists.")
 
+        # 1.1 Check if 'is_active' column exists
+        result = await conn.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='source_configs' AND column_name='is_active'
+        """))
+        is_active_exists = result.scalar() is not None
+
+        if not is_active_exists:
+            print("⚠️ Column 'is_active' missing. Adding it...")
+            await conn.execute(text("ALTER TABLE source_configs ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+            print("✅ Added column 'is_active'.")
+        else:
+            print("✅ Column 'is_active' already exists.")
+
         # 2. Check if 'tag' column exists (old column)
         result = await conn.execute(text("""
             SELECT column_name 
