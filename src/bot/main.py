@@ -105,13 +105,15 @@ def get_back_keyboard():
 
 
 # ============ Helpers ============
-async def get_or_create_user(user_id: int, username: str = None, referrer_id: int = None) -> User:
-    """Get user from DB or create new one."""
+async def get_or_create_user(user_id: int, username: str = None, referrer_id: int = None) -> tuple[User, bool]:
+    """Get user from DB or create new one. Returns (user, is_created)."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
+        is_created = False
         
         if not user:
+            is_created = True
             # Prevent self-referral
             if referrer_id == user_id:
                 referrer_id = None
@@ -129,7 +131,7 @@ async def get_or_create_user(user_id: int, username: str = None, referrer_id: in
                 except Exception as e:
                     logger.error(f"Failed to notify referrer {referrer_id}: {e}")
         
-        return user
+        return user, is_created
 
 
 async def get_user_keywords(user_id: int) -> list[FilterRule]:
@@ -160,8 +162,15 @@ async def cmd_start_deep_link(message: types.Message, command: CommandObject):
         except ValueError:
             pass
             
-    user = await get_or_create_user(message.from_user.id, message.from_user.username, referrer_id)
+    user, is_new = await get_or_create_user(message.from_user.id, message.from_user.username, referrer_id)
     
+    # Auto-add default keyword for new users
+    if is_new:
+        async with AsyncSessionLocal() as session:
+            default_kw = FilterRule(user_id=user.id, keyword="$BTC", is_active=True)
+            session.add(default_kw)
+            await session.commit()
+
     plan_display = "🆓 FREE"
     if user.plan_type == PlanType.VIP:
         plan_display = "💎 VIP"
@@ -177,6 +186,9 @@ Bot sẽ giúp bạn:
 • Theo dõi từ khóa từ hàng ngàn nhóm Telegram
 • Nhận thông báo real-time khi có tin nhắn match
 
+✅ **Đã tự động thêm từ khóa:** `$BTC`
+(Bạn sẽ nhận được tin tức về Bitcoin ngay lập tức)
+
 📊 **Tài khoản của bạn:**
 • Gói: {plan_display}
 • Giới hạn từ khóa: {keyword_limit}
@@ -188,8 +200,15 @@ Chọn chức năng bên dưới:
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     """Handle /start command."""
-    user = await get_or_create_user(message.from_user.id, message.from_user.username)
+    user, is_new = await get_or_create_user(message.from_user.id, message.from_user.username)
     
+    # Auto-add default keyword for new users
+    if is_new:
+        async with AsyncSessionLocal() as session:
+            default_kw = FilterRule(user_id=user.id, keyword="$BTC", is_active=True)
+            session.add(default_kw)
+            await session.commit()
+
     plan_display = "🆓 FREE"
     if user.plan_type == PlanType.VIP:
         plan_display = "💎 VIP"
@@ -197,6 +216,24 @@ async def cmd_start(message: types.Message):
         plan_display = "🏢 BUSINESS"
         
     keyword_limit = str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else "∞"
+
+    welcome_text = f"""
+🎯 **Chào mừng đến với Personal Alpha Hunter!**
+
+Bot sẽ giúp bạn:
+• Theo dõi từ khóa từ hàng ngàn nhóm Telegram
+• Nhận thông báo real-time khi có tin nhắn match
+
+✅ **Đã tự động thêm từ khóa:** `$BTC`
+(Bạn sẽ nhận được tin tức về Bitcoin ngay lập tức)
+
+📊 **Tài khoản của bạn:**
+• Gói: {plan_display}
+• Giới hạn từ khóa: {keyword_limit}
+
+Chọn chức năng bên dưới:
+"""
+    await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
     welcome_text = f"""
 🎯 **Chào mừng đến với Personal Alpha Hunter!**
