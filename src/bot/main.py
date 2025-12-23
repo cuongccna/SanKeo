@@ -302,11 +302,16 @@ async def cmd_pay(message: types.Message, amount: int = 50000, plan_name: str = 
     if plan_name == "BUSINESS":
         prefix = "BUS"
         
-    CONTENT = f"{prefix} {user_id}"
+    # Use underscore to ensure compatibility with all banking apps
+    CONTENT = f"{prefix}_{user_id}"
     
     # Generate QR Code (VietQR)
+    # Using compact2 template. 
+    # Note: Some banking apps might ignore addInfo if it contains spaces or special chars.
     qr_url = f"https://img.vietqr.io/image/{BANK_ID}-{ACCOUNT_NO}-compact2.png?amount={AMOUNT}&addInfo={quote(CONTENT)}&accountName={quote(ACCOUNT_NAME)}"
     
+    logger.info(f"Generated QR for {user_id}: {CONTENT} -> {qr_url}")
+
     payment_text = f"""
 💎 **Nâng cấp {plan_name} - {amount:,.0f}đ/tháng**
 
@@ -318,8 +323,10 @@ async def cmd_pay(message: types.Message, amount: int = 50000, plan_name: str = 
 👇 **Quét mã QR để thanh toán nhanh:**
 • Ngân hàng: **MBank**
 • STK: `{ACCOUNT_NO}`
-• Tên: **{ACCOUNT_NAME}**
+• Chủ TK: **{ACCOUNT_NAME}**
 • Nội dung: `{CONTENT}`
+
+⚠️ **Lưu ý:** Nếu App ngân hàng không tự điền nội dung, vui lòng nhập chính xác **`{CONTENT}`** để được kích hoạt tự động.
 
 ⚡ Hệ thống sẽ tự động kích hoạt {plan_name} trong 1-2 phút sau khi nhận được tiền.
 """
