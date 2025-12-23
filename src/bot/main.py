@@ -235,21 +235,6 @@ Chọn chức năng bên dưới:
 """
     await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-    welcome_text = f"""
-🎯 **Chào mừng đến với Personal Alpha Hunter!**
-
-Bot sẽ giúp bạn:
-• Theo dõi từ khóa từ hàng ngàn nhóm Telegram
-• Nhận thông báo real-time khi có tin nhắn match
-
-📊 **Tài khoản của bạn:**
-• Gói: {plan_display}
-• Giới hạn từ khóa: {keyword_limit}
-
-Chọn chức năng bên dưới:
-"""
-    await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
-
 @dp.message(Command("affiliate"))
 async def cmd_affiliate(message: types.Message):
     """Show affiliate info."""
@@ -558,8 +543,8 @@ async def callback_my_account(callback: CallbackQuery):
         
         # Escape username for Markdown
         username = user.username or 'N/A'
-        if username != 'N/A':
-            username = escape_markdown(username)
+        # if username != 'N/A':
+        #     username = escape_markdown(username)
 
         text = f"""
 👤 **Thông tin tài khoản**

@@ -18,9 +18,10 @@ async def list_sources():
         
         data = []
         for s in sources:
-            data.append([s.chat_id, s.name, s.tag, s.priority])
+            tags_str = ", ".join(s.tags) if s.tags else ""
+            data.append([s.chat_id, s.name, tags_str, s.priority])
             
-        print(tabulate(data, headers=["Chat ID", "Name", "Tag", "Priority"], tablefmt="grid"))
+        print(tabulate(data, headers=["Chat ID", "Name", "Tags", "Priority"], tablefmt="grid"))
 
 async def add_source(chat_id, name, tag, priority):
     async with AsyncSessionLocal() as session:
@@ -31,10 +32,10 @@ async def add_source(chat_id, name, tag, priority):
         if existing:
             print(f"⚠️ Source {chat_id} already exists. Updating...")
             existing.name = name
-            existing.tag = tag
+            existing.tags = [tag]
             existing.priority = priority
         else:
-            new_source = SourceConfig(chat_id=chat_id, name=name, tag=tag, priority=priority)
+            new_source = SourceConfig(chat_id=chat_id, name=name, tags=[tag], priority=priority)
             session.add(new_source)
             
         await session.commit()
