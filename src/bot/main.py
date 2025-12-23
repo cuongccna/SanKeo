@@ -92,6 +92,7 @@ def get_main_keyboard():
         [InlineKeyboardButton(text="📋 Danh sách từ khóa", callback_data="list_keywords")],
         [InlineKeyboardButton(text="💎 Nâng cấp Gói", callback_data="upgrade_menu")],
         [InlineKeyboardButton(text="🤝 Affiliate (Kiếm tiền)", callback_data="affiliate_info")],
+        [InlineKeyboardButton(text="📖 Hướng dẫn sử dụng", callback_data="guide_menu")],
         [InlineKeyboardButton(text="⚙️ Cài đặt", callback_data="settings_menu")],
         [InlineKeyboardButton(text="👤 Tài khoản", callback_data="my_account")],
     ])
@@ -366,8 +367,9 @@ Nhập từ khóa bạn muốn theo dõi.
 💡 **Hướng dẫn:**
 - Nhập 1 từ khóa: `Bitcoin`
 - Nhập nhiều từ khóa (cách nhau bằng dấu phẩy): `BTC, ETH, SOL`
-- Độ dài: 2 - 50 ký tự.
-- Không chứa ký tự đặc biệt quá nhiều.
+- Độ dài: 3 - 50 ký tự.
+- Ký tự cho phép: Chữ, Số, Khoảng trắng và `$ # @ . -`
+- Ví dụ: `$BTC`, `#AI`, `ETH-USDT`
 
 ⚠️ **Lưu ý:** Nếu đang ở trong nhóm, hãy **Reply** tin nhắn này để bot nhận được!""",
         reply_markup=get_back_keyboard(),
@@ -574,9 +576,9 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
                 # 1. Normalization: Lowercase & Strip
                 keyword = raw_keyword.lower().strip()
                 
-                # 2. Remove special characters (Keep alphanumeric, spaces, and $)
-                # This removes emojis and punctuation like .,!?- etc.
-                keyword = re.sub(r'[^\w\s$]', '', keyword)
+                # 2. Remove special characters (Keep alphanumeric, spaces, and $ # @ . -)
+                # This removes emojis and punctuation like ,! etc.
+                keyword = re.sub(r'[^\w\s$#@.-]', '', keyword)
                 
                 if not keyword:
                     failed_keywords.append(f"{raw_keyword} (Không hợp lệ sau khi chuẩn hóa)")
@@ -829,6 +831,92 @@ async def callback_smart_templates(callback: CallbackQuery):
     # The handler expects a Message. Let's adapt it.
     await cmd_templates(callback.message, user_id=callback.from_user.id)
     await callback.answer()
+
+
+@dp.callback_query(F.data == "guide_menu")
+async def callback_guide_menu(callback: CallbackQuery):
+    """Show guide menu."""
+    text = """
+📖 **Hướng dẫn sử dụng**
+
+Chào mừng bạn đến với trung tâm trợ giúp.
+Vui lòng chọn chủ đề bạn cần tìm hiểu:
+    """
+    buttons = [
+        [InlineKeyboardButton(text="🔑 Cách dùng Từ khóa", callback_data="guide_keywords")],
+        [InlineKeyboardButton(text="💰 Hướng dẫn Thanh toán", callback_data="guide_payment")],
+        [InlineKeyboardButton(text="🤖 Smart AI Templates", callback_data="guide_templates")],
+        [InlineKeyboardButton(text="⬅️ Quay lại Menu chính", callback_data="back_to_menu")]
+    ]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "guide_keywords")
+async def callback_guide_keywords(callback: CallbackQuery):
+    text = """
+🔑 **Hướng dẫn: Thiết lập Từ khóa**
+
+**1. Cách nhập đúng:**
+- Nhập 1 từ: `Bitcoin`
+- Nhập nhiều từ (cách nhau dấu phẩy): `BTC, ETH, SOL`
+- Ký tự đặc biệt cho phép: `$ # @ . -` (Ví dụ: `$BTC`, `#AI`, `ETH-USDT`)
+- Độ dài: 3 - 50 ký tự.
+
+**2. Lợi ích:**
+- **Lọc nhiễu:** Bạn chỉ nhận thông báo khi có tin nhắn chứa từ khóa bạn quan tâm.
+- **Real-time:** Nhận tin ngay lập tức từ hàng ngàn nhóm/channel.
+- **Đa nguồn:** Theo dõi cả tin tức, tín hiệu, on-chain cùng lúc.
+
+💡 *Mẹo: Dùng từ khóa ngắn gọn như `$BTC` thay vì `Bitcoin` để bắt được nhiều tin hơn.*
+    """
+    buttons = [[InlineKeyboardButton(text="⬅️ Quay lại Hướng dẫn", callback_data="guide_menu")]]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "guide_payment")
+async def callback_guide_payment(callback: CallbackQuery):
+    text = """
+💰 **Hướng dẫn: Thanh toán & Nâng cấp**
+
+**1. Cách thanh toán:**
+- Chọn gói (VIP/BUSINESS) -> Nhận QR Code.
+- Chuyển khoản đúng nội dung (Memo) hiển thị trên QR.
+- Hệ thống tự động kích hoạt trong 1-3 phút.
+
+**2. Lưu ý quan trọng:**
+- **Nội dung chuyển khoản:** Bắt buộc phải có mã `VIP...` hoặc `BUS...` để hệ thống nhận diện.
+- **Số tiền:** 
+  - Nếu chuyển **thiếu/thừa**: Hệ thống sẽ tự động quy đổi thành số ngày sử dụng tương ứng.
+  - Tối thiểu: 1.000đ.
+
+**3. Quyền lợi:**
+- **VIP:** Không giới hạn từ khóa, AI cơ bản.
+- **BUSINESS:** AI chuyên sâu, Auto-forward tin nhắn sang nhóm riêng, nuôi dưỡng cộng đồng, nuôi kênh.
+    """
+    buttons = [[InlineKeyboardButton(text="⬅️ Quay lại Hướng dẫn", callback_data="guide_menu")]]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "guide_templates")
+async def callback_guide_templates(callback: CallbackQuery):
+    text = """
+🤖 **Hướng dẫn: Smart AI Templates**
+
+**1. Template là gì?**
+Là các mẫu báo cáo được AI tổng hợp tự động từ hàng ngàn tin nhắn theo chủ đề cụ thể (Ví dụ: Săn cá mập, Kèo Lowcap).
+
+**2. Cách sử dụng:**
+- Vào menu **Smart AI Templates**.
+- Chọn Template yêu thích -> Bấm **Đăng ký**.
+- Hệ thống sẽ tự động gửi báo cáo định kỳ (mỗi 1-2 tiếng) cho bạn.
+
+**3. Lợi ích:**
+- **Tiết kiệm thời gian:** Không cần đọc từng tin nhắn lẻ tẻ.
+- **Góc nhìn đa chiều:** AI tổng hợp dữ liệu từ On-chain, Tin tức, Tín hiệu để đưa ra nhận định.
+- **Không bỏ lỡ trend:** Tự động phát hiện dòng tiền và xu hướng mới.
+    """
+    buttons = [[InlineKeyboardButton(text="⬅️ Quay lại Hướng dẫn", callback_data="guide_menu")]]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="Markdown")
 
 
 @dp.callback_query(F.data == "settings_menu")

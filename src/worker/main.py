@@ -200,10 +200,6 @@ async def process_message(redis, message_data: dict):
         if not matched_rules:
             return
 
-        # AI Analysis (Lazy load: only if needed)
-        ai_analysis_vip = None
-        ai_analysis_business = None
-
         # Generate Message Hash for Dedup
         msg_text = message_data.get('text', '')
         msg_hash = hashlib.md5(msg_text.encode('utf-8')).hexdigest()
@@ -234,21 +230,10 @@ async def process_message(redis, message_data: dict):
             # Set Dedup (TTL 1 hour)
             await redis.setex(dedup_key, 3600, "1")
             
-            # AI Analysis
+            # AI Analysis: DISABLED for individual messages as per request
+            # AI is only used for Templates (aggregated reports)
             analysis_text = None
             
-            if db_rule.user.plan_type == PlanType.VIP:
-                if ai_analysis_vip is None:
-                     logger.info("Performing AI Analysis for VIP user...")
-                     ai_analysis_vip = await ai_engine.analyze_message(message_data.get('text', ''), plan_type="VIP")
-                analysis_text = ai_analysis_vip
-            
-            elif db_rule.user.plan_type == PlanType.BUSINESS:
-                if ai_analysis_business is None:
-                     logger.info("Performing AI Analysis for BUSINESS user...")
-                     ai_analysis_business = await ai_engine.analyze_message(message_data.get('text', ''), plan_type="BUSINESS")
-                analysis_text = ai_analysis_business
-
             # Create notification
             notification = {
                 "user_id": db_rule.user_id,

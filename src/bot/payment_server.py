@@ -27,9 +27,13 @@ from src.database.models import User, Transaction, PlanType
 logger = get_logger("payment")
 
 # ============ Config ============
-VIP_PRICE = 50000  # 50.000 VND
-BUSINESS_PRICE = 299000 # 299.000 VND
+VIP_PRICE = 50000.0  # 50.000 VND
+BUSINESS_PRICE = 299000.0 # 299.000 VND
 VIP_DURATION_DAYS = 30
+
+# Daily Rates
+VIP_DAILY_RATE = VIP_PRICE / 30
+BUSINESS_DAILY_RATE = BUSINESS_PRICE / 30
 
 # Queue for bot notifications
 QUEUE_PAYMENT_NOTIFICATIONS = "queue:payment_notifications"
@@ -126,6 +130,25 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
             logger.warning(f"User {user_id} not found for payment")
             return False
         
+        # Determine Plan and Rate
+        # Logic:
+        # 1. If amount >= BUSINESS_PRICE -> Upgrade/Extend BUSINESS
+        # 2. If user is already BUSINESS -> Extend BUSINESS (even with small amount)
+        # 3. Else -> VIP
+        
+        target_plan = PlanType.VIP
+        daily_rate = VIP_DAILY_RATE
+        
+        if amount >= BUSINESS_PRICE:
+            target_plan = PlanType.BUSINESS
+            daily_rate = BUSINESS_DAILY_RATE
+        elif user.plan_type == PlanType.BUSINESS:
+            target_plan = PlanType.BUSINESS
+            daily_rate = BUSINESS_DAILY_RATE
+            
+        # Calculate days to add
+        days_to_add = amount / daily_rate
+        
         # Calculate new expiry date
         now = datetime.utcnow()
         
@@ -143,26 +166,13 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
 
         if current_expiry and current_expiry > now:
             # Extend from current expiry
-            # Ensure we add timedelta to the correct object (aware or naive)
-            # Ideally, we work with what user.expiry_date is, but for calculation safety:
-            new_expiry = user.expiry_date + timedelta(days=VIP_DURATION_DAYS)
+            new_expiry = current_expiry + timedelta(days=days_to_add)
         else:
             # Start fresh
-            # Reset to naive UTC if that's what DB expects, or keep it consistent
-            # For simplicity, let's stick to naive UTC as per original design if DB is naive
-            # But if DB returns aware, we should respect it.
-            # Safest is to use the 'now' we just standardized or fresh utcnow
-            new_expiry = datetime.utcnow() + timedelta(days=VIP_DURATION_DAYS)
-        
-        # Determine Plan Type based on Amount
-        new_plan = PlanType.VIP
-        if amount >= BUSINESS_PRICE:
-            new_plan = PlanType.BUSINESS
+            new_expiry = now + timedelta(days=days_to_add)
         
         # Update user
-        # If upgrading from VIP to BUSINESS, we might want to handle it differently
-        # But for simplicity, we just set the new plan type.
-        user.plan_type = new_plan
+        user.plan_type = target_plan
         user.expiry_date = new_expiry
         
         # Create transaction record
@@ -176,7 +186,7 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
         
         await session.commit()
         
-        logger.info(f"VIP upgraded: user={user_id}, expiry={new_expiry}, amount={amount}")
+        logger.info(f"Payment processed: user={user_id}, plan={target_plan}, days={days_to_add:.2f}, amount={amount}")
         return True
 
 
@@ -238,12 +248,12 @@ async def sepay_webhook(data: SePayWebhookData):
         logger.warning(f"Could not parse user ID from content: {data.content}")
         return WebhookResponse(success=False, message="Invalid transfer content format")
     
-    # Check minimum amount
-    if data.transferAmount < VIP_PRICE:
-        logger.warning(f"Amount too low: {data.transferAmount} < {VIP_PRICE}")
+    # Check minimum amount (Allow small amounts, e.g. > 1000 VND to avoid spam)
+    if data.transferAmount < 1000:
+        logger.warning(f"Amount too low: {data.transferAmount}")
         return WebhookResponse(
             success=False, 
-            message=f"Amount too low. Minimum: {VIP_PRICE}",
+            message="Amount too low. Minimum: 1000 VND",
             user_id=user_id
         )
     
@@ -296,7 +306,7 @@ async def casso_webhook(request: Request):
             # Reuse SePay logic
             if data.transferType == "in":
                 user_id = parse_user_id_from_content(data.content)
-                if user_id and data.transferAmount >= VIP_PRICE:
+                if user_id and data.transferAmount >= 1000:
                     success = await process_vip_upgrade(user_id, data.id, data.transferAmount)
                     if success:
                         # Get updated user info for notification
