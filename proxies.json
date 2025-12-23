@@ -1,0 +1,16 @@
+{
+  "84987654321": {
+    "scheme": "socks5",
+    "hostname": "192.168.1.10",
+    "port": 1080,
+    "username": "user1",
+    "password": "pass_user1"
+  },
+  "84912345678": {
+    "scheme": "http",
+    "hostname": "103.45.22.11",
+    "port": 8080,
+    "username": "user2",
+    "password": "pass_user2"
+  }
+}

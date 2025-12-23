@@ -40,6 +40,14 @@ fi
 # Activate venv
 source ./venv/bin/activate || { echo "❌ Failed to activate venv"; exit 1; }
 
+# Load environment variables
+if [ -f .env ]; then
+    echo "🌍 Loading environment variables..."
+    set -a
+    source .env
+    set +a
+fi
+
 # 4. Install Dependencies
 echo "📦 Installing dependencies..."
 
