@@ -9,7 +9,11 @@ echo "🚀 Starting Deployment..."
 
 # 1. Pull latest code
 echo "📥 Pulling latest code from Git..."
+# Stash any local changes (like config files) to avoid conflicts
+git stash
 git pull origin main
+# Restore local changes
+git stash pop || echo "⚠️ No local changes to restore or conflict occurred."
 
 # 2. System Dependencies
 echo "🛠️ Checking system dependencies..."

@@ -52,6 +52,19 @@ module.exports = {
         PYTHONPATH: ".",
         NODE_ENV: "production"
       }
+    },
+    {
+      name: "sankeo-sniper",
+      script: "src/sniper/main.py",
+      interpreter: "./venv/bin/python3",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "300M",
+      env: {
+        PYTHONPATH: ".",
+        NODE_ENV: "production"
+      }
     }
   ]
 };
