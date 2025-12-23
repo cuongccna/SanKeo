@@ -379,7 +379,7 @@ async def callback_add_keyword(callback: CallbackQuery, state: FSMContext):
     """Handle add keyword button."""
     await callback.answer()  # Answer callback to remove loading state
     
-    user = await get_or_create_user(callback.from_user.id)
+    user, _ = await get_or_create_user(callback.from_user.id)
     keyword_count = await count_user_keywords(callback.from_user.id)
     
     logger.info(f"User {callback.from_user.id} clicked add_keyword, current count: {keyword_count}")
@@ -460,7 +460,7 @@ async def callback_delete_keyword(callback: CallbackQuery):
 @dp.callback_query(F.data == "upgrade_menu")
 async def callback_upgrade_menu(callback: CallbackQuery):
     """Show upgrade options based on current plan."""
-    user = await get_or_create_user(callback.from_user.id)
+    user, _ = await get_or_create_user(callback.from_user.id)
     
     if user.plan_type == PlanType.BUSINESS:
         text = """
@@ -540,7 +540,7 @@ async def callback_my_account(callback: CallbackQuery):
     """Handle my account button."""
     try:
         logger.info(f"User {callback.from_user.id} requested account info")
-        user = await get_or_create_user(callback.from_user.id)
+        user, _ = await get_or_create_user(callback.from_user.id)
         keyword_count = await count_user_keywords(callback.from_user.id)
         
         expiry_text = ""
