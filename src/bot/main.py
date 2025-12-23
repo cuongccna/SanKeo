@@ -555,6 +555,12 @@ async def callback_my_account(callback: CallbackQuery):
 • Số từ khóa: {keyword_count}{'/' + str(FREE_MAX_KEYWORDS) if user.plan_type == PlanType.FREE else ''}
 • Ngày tham gia: {created_at_str}
 """
+        # Escape markdown special characters in username and other fields if necessary
+        # But since we use parse_mode="Markdown", we should be careful.
+        # Username might contain underscores which are special in Markdown.
+        # Let's escape username.
+        text = text.replace("_", "\\_")
+        
         await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error in callback_my_account: {e}", exc_info=True)
