@@ -35,15 +35,28 @@ class AIClient:
         - Đưa ra nhận định xu hướng ngắn hạn.
         - BẮT BUỘC: Cuối báo cáo phải có dòng: "⚠️ <i>Nhận định được tổng hợp bởi AI từ các nguồn tin trên, chỉ mang tính tham khảo, không phải lời khuyên đầu tư.</i>"
         - Không xưng là "tôi" hay "AI", hãy dùng giọng văn khách quan của một bản báo cáo tài chính.
-        - ĐỊNH DẠNG: Sử dụng thẻ HTML để định dạng văn bản (Telegram HTML style):
-          + In đậm: <b>Nội dung</b> (Dùng cho tiêu đề, điểm nhấn)
-          + In nghiêng: <i>Nội dung</i>
-          + KHÔNG dùng Markdown (như **, ##, __). Chỉ dùng HTML.
+        
+        QUAN TRỌNG VỀ ĐỊNH DẠNG (Telegram HTML):
+        1. CHỈ sử dụng các thẻ: <b>, <i>, <u>, <s>, <a>, <code>, <pre>.
+        2. TUYỆT ĐỐI KHÔNG sử dụng: <p>, <ul>, <li>, <h1>, <h2>, <br>, <div>.
+        3. TUYỆT ĐỐI KHÔNG bao quanh nội dung bằng ```html hoặc ```. Trả về text thô chứa thẻ HTML.
+        4. Xuống dòng: Sử dụng phím Enter (ký tự xuống dòng thực tế), không dùng thẻ <br> hay <p>.
+        5. Danh sách: Sử dụng gạch đầu dòng (-) hoặc emoji (•, 🔹) thay cho thẻ <ul>/<li>.
         """
 
         try:
             response = await self.model.generate_content_async(prompt)
-            return response.text.strip()
+            text = response.text.strip()
+            
+            # Clean up markdown code blocks if AI ignores instructions
+            if text.startswith("```html"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+                
+            return text.strip()
         except Exception as e:
             logger.error(f"AI Template Generation failed: {e}")
             return "AI Generation Failed"
