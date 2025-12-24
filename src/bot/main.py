@@ -761,7 +761,12 @@ Chúc bạn săn kèo thành công! 🚀
                     user_id = notification["user_id"]
                     message_text = notification["message"]
                     try:
-                        await bot.send_message(user_id, message_text, parse_mode="Markdown")
+                        try:
+                            await bot.send_message(user_id, message_text, parse_mode="Markdown")
+                        except Exception as e:
+                            logger.warning(f"Failed to send template report with Markdown to {user_id}: {e}. Retrying with plain text.")
+                            await bot.send_message(user_id, message_text, parse_mode=None)
+                            
                         logger.info(f"Template report sent to {user_id}")
                         
                         # Forward Template Report to Business Targets
@@ -773,7 +778,12 @@ Chúc bạn săn kèo thành công! 🚀
                             if targets:
                                 for target in targets:
                                     try:
-                                        await bot.send_message(target.channel_id, message_text, parse_mode="Markdown")
+                                        try:
+                                            await bot.send_message(target.channel_id, message_text, parse_mode="Markdown")
+                                        except Exception as e:
+                                            logger.warning(f"Failed to forward template with Markdown to {target.channel_id}: {e}. Retrying with plain text.")
+                                            await bot.send_message(target.channel_id, message_text, parse_mode=None)
+                                            
                                         logger.debug(f"Forwarded template to channel {target.channel_id} for user {user_id}")
                                         await asyncio.sleep(0.5)
                                     except Exception as e:
