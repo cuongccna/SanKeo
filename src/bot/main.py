@@ -596,7 +596,6 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
     added_keywords = []
     failed_keywords = []
 
-    # Add to database
     try:
         async with AsyncSessionLocal() as session:
             # Check user plan for limits
@@ -616,39 +615,34 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
                 keyword = re.sub(r'[^\w\s$#@.-]', '', keyword)
                 
                 if not keyword:
-                    failed_keywords.append(f"{raw_keyword} (Không hợp lệ sau khi chuẩn hóa)")
+                    failed_keywords.append(f"{escape_markdown(raw_keyword)} (Không hợp lệ sau khi chuẩn hóa)")
                     continue
 
                 # 3. Length Check
-                # Rule: >= 3 chars. Exception: 2 chars allowed if it starts with $ (e.g. $op)
-                # Since we stripped special chars, $op is 3 chars. op is 2 chars.
-                # So simple check: len < 3 is invalid.
                 if len(keyword) < 3:
-                    failed_keywords.append(f"{keyword} (Quá ngắn, tối thiểu 3 ký tự. Ví dụ: btc, $op)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Quá ngắn, tối thiểu 3 ký tự)")
                     continue
                 
                 if len(keyword) > 50:
-                    failed_keywords.append(f"{keyword} (Quá dài, tối đa 50 ký tự)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Quá dài, tối đa 50 ký tự)")
                     continue
                 
                 # 4. Blacklist Check
                 if keyword in KEYWORD_BLACKLIST:
-                    failed_keywords.append(f"{keyword} (Từ khóa bị chặn vì quá thông dụng)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Từ khóa bị chặn vì quá thông dụng)")
                     continue
                 
                 # 5. Must contain at least one alphanumeric character (prevent just "$$$")
                 if not re.search(r'[a-zA-Z0-9]', keyword):
-                    failed_keywords.append(f"{keyword} (Không hợp lệ, phải chứa chữ hoặc số)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Không hợp lệ, phải chứa chữ hoặc số)")
                     continue
 
                 # Check limit for FREE users
                 if user.plan_type == PlanType.FREE and current_count >= FREE_MAX_KEYWORDS:
-                    failed_keywords.append(f"{keyword} (Đạt giới hạn gói FREE: tối đa {FREE_MAX_KEYWORDS} từ)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Đạt giới hạn gói FREE: tối đa {FREE_MAX_KEYWORDS} từ)")
                     continue
 
                 # Check duplicate
-                # Ideally we check DB, but for simplicity let's just try insert
-                # Or check if exists
                 exists = await session.execute(
                     select(FilterRule).where(
                         FilterRule.user_id == message.from_user.id,
@@ -656,7 +650,7 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
                     )
                 )
                 if exists.scalar_one_or_none():
-                    failed_keywords.append(f"{keyword} (Đã tồn tại)")
+                    failed_keywords.append(f"{escape_markdown(keyword)} (Đã tồn tại)")
                     continue
 
                 new_rule = FilterRule(
@@ -670,8 +664,6 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
             
             await session.commit()
         
-        await state.clear()
-        
         msg = ""
         if added_keywords:
             msg += f"✅ Đã thêm {len(added_keywords)} từ khóa:\n" + "\n".join([f"- `{k}`" for k in added_keywords])
@@ -679,15 +671,24 @@ async def process_add_keyword(message: types.Message, state: FSMContext):
         if failed_keywords:
             msg += "\n\n⚠️ Không thể thêm:\n" + "\n".join([f"- {k}" for k in failed_keywords])
             
-        await message.answer(
-            msg,
-            reply_markup=get_main_keyboard(),
-            parse_mode="Markdown"
-        )
-        logger.info(f"User {message.from_user.id} added keywords: {added_keywords}")
+        try:
+            await message.answer(
+                msg,
+                reply_markup=get_main_keyboard(),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send markdown response: {e}")
+            # Fallback to plain text
+            await message.answer(
+                msg.replace("`", "").replace("*", ""),
+                reply_markup=get_main_keyboard()
+            )
+            
     except Exception as e:
-        logger.error(f"Error adding keyword: {e}")
-        await message.answer("❌ Có lỗi xảy ra. Vui lòng thử lại!")
+        logger.error(f"Error adding keyword: {e}", exc_info=True)
+        await message.answer("❌ Có lỗi xảy ra khi xử lý từ khóa. Vui lòng thử lại!")
+    finally:
         await state.clear()
 
 
@@ -698,10 +699,18 @@ async def catch_all_message(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     logger.info(f"Catch-all: User {message.from_user.id} sent '{message.text}', state={current_state}")
     
-    # If user is in waiting_for_keyword state but FSM didn't catch it
+    # If user is in waiting_for_keyword state but FSM didn't catch it (should not happen with correct ordering)
     if current_state == AddKeywordState.waiting_for_keyword.state:
         logger.info("Redirecting to add keyword handler...")
         await process_add_keyword(message, state)
+        return
+
+    # If user sends text but not in any state, guide them
+    if not current_state:
+        await message.answer(
+            "🤖 Tôi không hiểu yêu cầu này.\n\nVui lòng chọn chức năng trên Menu hoặc bấm /start để bắt đầu.",
+            reply_markup=get_main_keyboard()
+        )
 
 
 # ============ Notification Worker ============
