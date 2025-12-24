@@ -86,7 +86,7 @@ class TemplateScheduler:
                         for sub in subs:
                             notification = {
                                 "user_id": sub.user_id,
-                                "message": f"🔔 **Báo cáo định kỳ: {template.name}**\n\n{report}",
+                                "message": f"🔔 <b>Báo cáo định kỳ: {template.name}</b>\n\n{report}",
                                 "type": "TEMPLATE_REPORT"
                             }
                             await redis.lpush(QUEUE_NOTIFICATIONS, json.dumps(notification))

@@ -175,7 +175,7 @@ async def main():
                     reply_text = await get_ai_reply()
 
                     # 6. Reply
-                    await m.reply_text(reply_text)
+                    await m.reply_text(reply_text, parse_mode=enums.ParseMode.MARKDOWN)
                     
                     logger.info(f"[{c.name}] Replied to user {m.from_user.id} in {m.chat.title}: '{reply_text}'")
 
