@@ -762,9 +762,10 @@ Chúc bạn săn kèo thành công! 🚀
                     message_text = notification["message"]
                     try:
                         try:
-                            await bot.send_message(user_id, message_text, parse_mode="Markdown")
+                            # Use HTML parse mode as requested in AI prompt
+                            await bot.send_message(user_id, message_text, parse_mode="HTML")
                         except Exception as e:
-                            logger.warning(f"Failed to send template report with Markdown to {user_id}: {e}. Retrying with plain text.")
+                            logger.warning(f"Failed to send template report with HTML to {user_id}: {e}. Retrying with plain text.")
                             await bot.send_message(user_id, message_text, parse_mode=None)
                             
                         logger.info(f"Template report sent to {user_id}")
@@ -779,9 +780,9 @@ Chúc bạn săn kèo thành công! 🚀
                                 for target in targets:
                                     try:
                                         try:
-                                            await bot.send_message(target.channel_id, message_text, parse_mode="Markdown")
+                                            await bot.send_message(target.channel_id, message_text, parse_mode="HTML")
                                         except Exception as e:
-                                            logger.warning(f"Failed to forward template with Markdown to {target.channel_id}: {e}. Retrying with plain text.")
+                                            logger.warning(f"Failed to forward template with HTML to {target.channel_id}: {e}. Retrying with plain text.")
                                             await bot.send_message(target.channel_id, message_text, parse_mode=None)
                                             
                                         logger.debug(f"Forwarded template to channel {target.channel_id} for user {user_id}")
@@ -1020,6 +1021,115 @@ Ví dụ:
     """
     await callback.message.edit_text(text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
 
+# ============ Subscription Monitor ============
+async def subscription_monitor():
+    """Monitor user subscriptions."""
+    logger.info("Subscription Monitor started...")
+    redis = await get_redis()
+    
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                # Get all VIP/BUSINESS users
+                result = await session.execute(
+                    select(User).where(User.plan_type.in_([PlanType.VIP, PlanType.BUSINESS]))
+                )
+                users = result.scalars().all()
+                
+                now = datetime.utcnow()
+                
+                for user in users:
+                    if not user.expiry_date:
+                        continue
+                        
+                    # Ensure timezone awareness match (Assume DB is naive UTC)
+                    expiry = user.expiry_date
+                    
+                    # Calculate time left
+                    time_left = expiry - now
+                    days_left = time_left.days
+                    
+                    # 1. Handle Expiration
+                    if time_left.total_seconds() <= 0:
+                        logger.info(f"User {user.id} expired. Downgrading...")
+                        
+                        # Notify
+                        try:
+                            await bot.send_message(user.id, "⚠️ **Gói cước đã hết hạn!**\n\nHệ thống sẽ chuyển bạn về gói FREE và ngừng các tính năng nâng cao.\nVui lòng gia hạn để tiếp tục sử dụng.", parse_mode="Markdown")
+                        except:
+                            pass
+                            
+                        # Handle BUSINESS: Leave groups
+                        if user.plan_type == PlanType.BUSINESS:
+                            # Get targets
+                            targets_result = await session.execute(
+                                select(UserForwardingTarget).where(UserForwardingTarget.user_id == user.id)
+                            )
+                            targets = targets_result.scalars().all()
+                            for target in targets:
+                                try:
+                                    await bot.leave_chat(target.channel_id)
+                                    logger.info(f"Left channel {target.channel_id} of expired user {user.id}")
+                                except Exception as e:
+                                    logger.error(f"Failed to leave channel {target.channel_id}: {e}")
+                            
+                            # Clear targets
+                            await session.execute(delete(UserForwardingTarget).where(UserForwardingTarget.user_id == user.id))
+                        
+                        # Downgrade
+                        user.plan_type = PlanType.FREE
+                        user.expiry_date = None
+                        await session.commit()
+                        continue
+
+                    # 2. Handle Warning (<= 2 days)
+                    if days_left <= 2:
+                        # Check frequency (3 times/day)
+                        # Key: sub_warning:{user_id}:{date_str} -> count
+                        date_str = now.strftime("%Y-%m-%d")
+                        key = f"sub_warning:{user.id}:{date_str}"
+                        
+                        count = await redis.get(key)
+                        count = int(count) if count else 0
+                        
+                        if count < 3:
+                            # Check gap (at least 4 hours)
+                            last_sent_key = f"sub_warning_last:{user.id}"
+                            last_sent = await redis.get(last_sent_key)
+                            
+                            should_send = True
+                            if last_sent:
+                                last_sent_time = datetime.fromtimestamp(float(last_sent))
+                                if (now - last_sent_time).total_seconds() < 4 * 3600: # 4 hours gap
+                                    should_send = False
+                            
+                            if should_send:
+                                try:
+                                    msg = f"""
+⚠️ **Sắp hết hạn sử dụng!**
+
+Gói **{user.plan_type}** của bạn sẽ hết hạn trong **{days_left} ngày {int(time_left.seconds/3600)} giờ**.
+Vui lòng gia hạn ngay để không bị gián đoạn dịch vụ.
+
+👉 Bấm /pay để gia hạn.
+"""
+                                    await bot.send_message(user.id, msg, parse_mode="Markdown")
+                                    
+                                    # Update counters
+                                    await redis.incr(key)
+                                    await redis.expire(key, 86400) # 1 day
+                                    await redis.set(last_sent_key, now.timestamp())
+                                    
+                                    logger.info(f"Sent expiration warning to {user.id} ({count+1}/3)")
+                                except Exception as e:
+                                    logger.error(f"Failed to send warning to {user.id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Subscription monitor error: {e}")
+            
+        # Sleep 1 hour
+        await asyncio.sleep(3600)
+
 # ============ Main ============
 async def main():
     """Main entry point for Bot Service."""
@@ -1034,6 +1144,9 @@ async def main():
     
     # Start notification worker as background task
     asyncio.create_task(notification_worker())
+    
+    # Start subscription monitor
+    asyncio.create_task(subscription_monitor())
     
     # Get bot info
     me = await bot.get_me()

@@ -33,8 +33,12 @@ class AIClient:
         Yêu cầu:
         - Tìm mối liên hệ giữa các tin (Ví dụ: Onchain báo gom + Tin tức tốt -> Kết luận Bullish).
         - Đưa ra nhận định xu hướng ngắn hạn.
-        - BẮT BUỘC: Cuối báo cáo phải có dòng: "⚠️ Nhận định được tổng hợp bởi AI từ các nguồn tin trên, chỉ mang tính tham khảo, không phải lời khuyên đầu tư."
+        - BẮT BUỘC: Cuối báo cáo phải có dòng: "⚠️ <i>Nhận định được tổng hợp bởi AI từ các nguồn tin trên, chỉ mang tính tham khảo, không phải lời khuyên đầu tư.</i>"
         - Không xưng là "tôi" hay "AI", hãy dùng giọng văn khách quan của một bản báo cáo tài chính.
+        - ĐỊNH DẠNG: Sử dụng thẻ HTML để định dạng văn bản (Telegram HTML style):
+          + In đậm: <b>Nội dung</b> (Dùng cho tiêu đề, điểm nhấn)
+          + In nghiêng: <i>Nội dung</i>
+          + KHÔNG dùng Markdown (như **, ##, __). Chỉ dùng HTML.
         """
 
         try:
