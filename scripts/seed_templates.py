@@ -21,6 +21,7 @@ TEMPLATES = [
         {list_of_messages}
         
         Yêu cầu:
+        - KHÔNG viết tiêu đề báo cáo (H1, H2). Bắt đầu ngay vào nội dung.
         - Phân tích hành vi cá voi: Đang gom hàng (Accumulation) hay chuẩn bị xả (Distribution)?
         - Kết hợp với hành động giá hiện tại để đưa ra cảnh báo (Ví dụ: Chuyển tiền lên sàn + Giá tại kháng cự -> Rủi ro xả).
         - Đưa ra nhận định ngắn hạn: Bullish hay Bearish?
@@ -39,6 +40,7 @@ TEMPLATES = [
         {list_of_messages}
         
         Yêu cầu:
+        - KHÔNG viết tiêu đề báo cáo (H1, H2). Bắt đầu ngay vào nội dung.
         - Xác định token nào đang được nhắc đến nhiều nhất (Shill frequency).
         - Đánh giá rủi ro (Rug pull, Honey pot) dựa trên thông tin có được.
         - Khuyến nghị vốn vào lệnh (Ví dụ: Chỉ xổ số, Volume đột biến).

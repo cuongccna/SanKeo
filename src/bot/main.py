@@ -754,6 +754,22 @@ Chúc bạn săn kèo thành công! 🚀
                     try:
                         await bot.send_message(user_id, message_text, parse_mode="Markdown")
                         logger.info(f"Template report sent to {user_id}")
+                        
+                        # Forward Template Report to Business Targets
+                        async with AsyncSessionLocal() as session:
+                            result = await session.execute(
+                                select(UserForwardingTarget).where(UserForwardingTarget.user_id == user_id)
+                            )
+                            targets = result.scalars().all()
+                            if targets:
+                                for target in targets:
+                                    try:
+                                        await bot.send_message(target.channel_id, message_text, parse_mode="Markdown")
+                                        logger.debug(f"Forwarded template to channel {target.channel_id} for user {user_id}")
+                                        await asyncio.sleep(0.5)
+                                    except Exception as e:
+                                        logger.error(f"Failed to forward template to channel {target.channel_id}: {e}")
+
                     except Exception as e:
                         logger.error(f"Failed to send template report to {user_id}: {e}")
                     continue
@@ -919,7 +935,7 @@ async def callback_guide_payment(callback: CallbackQuery):
 - Hệ thống tự động kích hoạt trong 1-3 phút.
 
 **2. Lưu ý quan trọng:**
-- **Nội dung chuyển khoản:** Bắt buộc phải có mã `VIP...` hoặc `BUS...` để hệ thống nhận diện.
+- **Nội dung chuyển khoản:** Bắt buộc phải có mã `VIP ...` hoặc `BUS ...` để hệ thống nhận diện.
 - **Số tiền:** 
   - Nếu chuyển **thiếu/thừa**: Hệ thống sẽ tự động quy đổi thành số ngày sử dụng tương ứng.
   - Tối thiểu: 1.000đ.
