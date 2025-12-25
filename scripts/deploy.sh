@@ -103,5 +103,9 @@ fi
 pm2 startOrReload ecosystem.config.js --update-env
 pm2 save
 
+# Setup PM2 Startup (if not already done)
+# Note: This command might need to be run manually once on the server to get the correct command
+# pm2 startup
+
 echo "✅ Deployment Complete!"
 pm2 status

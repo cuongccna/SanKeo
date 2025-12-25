@@ -65,6 +65,20 @@ module.exports = {
         PYTHONPATH: ".",
         NODE_ENV: "production"
       }
+    },
+    {
+      name: "sankeo-scanner",
+      script: "scripts/scanner_joiner.py",
+      interpreter: "./venv/bin/python3",
+      instances: 1,
+      autorestart: false,
+      cron_restart: "0 */4 * * *", // Run every 4 hours
+      watch: false,
+      max_memory_restart: "500M",
+      env: {
+        PYTHONPATH: ".",
+        NODE_ENV: "production"
+      }
     }
   ]
 };
