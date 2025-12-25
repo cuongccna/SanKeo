@@ -5,6 +5,7 @@ import os
 import random
 import glob
 import re
+import warnings
 from typing import List, Dict
 
 from dotenv import load_dotenv
@@ -12,6 +13,10 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait, UserBannedInChannel
 import google.generativeai as genai
+from src.sniper.scanner import run_scanner_cycle
+
+# Suppress FutureWarning from google.generativeai
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 # Load environment variables
 load_dotenv()
@@ -213,6 +218,25 @@ async def main():
     # Dùng compose để chạy mượt hơn thay vì gather đơn thuần nếu số lượng acc lớn
     await asyncio.gather(*[c.start() for c in clients])
     logger.info("Sniper is active.")
+    
+    # --- Background Scanner Task ---
+    async def scanner_loop(client):
+        # Initial delay to let the bot settle
+        await asyncio.sleep(60) 
+        while True:
+            try:
+                await run_scanner_cycle(client)
+            except Exception as e:
+                logger.error(f"Scanner loop error: {e}")
+            
+            # Run every 4 hours (plus random jitter)
+            sleep_duration = 4 * 3600 + random.randint(0, 600)
+            logger.info(f"Scanner sleeping for {sleep_duration}s...")
+            await asyncio.sleep(sleep_duration)
+
+    # Start scanner for each client
+    for c in clients:
+        asyncio.create_task(scanner_loop(c))
     
     await asyncio.Event().wait()
 
