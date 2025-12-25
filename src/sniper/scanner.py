@@ -89,14 +89,17 @@ async def run_scanner_cycle(client: Client):
                 
                 is_broadcast = getattr(chat_raw, 'broadcast', False)
                 if is_broadcast:
+                    # logger.debug(f"Skipping {title}: Broadcast Channel")
                     continue
 
                 if history.exists(chat_id):
+                    # logger.debug(f"Skipping {title}: Already scanned")
                     continue
                 
                 history.add(chat_id)
 
                 if not username:
+                    logger.info(f"Skipping {title}: No username")
                     continue
 
                 try:
@@ -104,6 +107,7 @@ async def run_scanner_cycle(client: Client):
                     member_count = full_chat.members_count
                     
                     if not (MIN_MEMBERS <= member_count <= MAX_MEMBERS):
+                        logger.info(f"Skipping {title}: Members {member_count} not in range")
                         continue
 
                     logger.info(f"🚀 Attempting to join: {title} (@{username})")
