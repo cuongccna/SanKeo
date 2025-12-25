@@ -1,25 +1,69 @@
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import os
+import textwrap
 from src.common.template_registry import get_template_config
 from src.common.logger import logger
 
 class ReportVisualizer:
     def __init__(self):
-        # Init Font, Colors
-        self.BG_DARK = (20, 25, 40)
+        # Init Colors
+        self.BG_DARK = (15, 20, 35) # Darker, cleaner blue-black
+        self.ACCENT_COLOR = (0, 255, 200) # Cyan accent
+        self.TEXT_MAIN = (255, 255, 255)
+        self.TEXT_SUB = (180, 180, 190)
         
-        # Try to load fonts, fallback to default if not found
+        # Font Sizes (High Res)
+        self.SIZE_TITLE = 70
+        self.SIZE_HEADER = 45
+        self.SIZE_BODY = 32
+        self.SIZE_BOLD = 36
+        self.SIZE_SMALL = 24
+        
+        self._load_fonts()
+        
+    def _load_fonts(self):
+        """Robust font loading for Windows/Linux"""
+        font_candidates = [
+            "arial.ttf", 
+            "SegoeUI.ttf", 
+            "Roboto-Regular.ttf", 
+            "DejaVuSans.ttf", 
+            "LiberationSans-Regular.ttf",
+            "FreeSans.ttf"
+        ]
+        
+        font_paths = [
+            ".", 
+            "assets/fonts", 
+            "C:\\Windows\\Fonts",
+            "/usr/share/fonts/truetype/dejavu", 
+            "/usr/share/fonts/truetype/liberation",
+            "/usr/share/fonts/truetype/freefont"
+        ]
+        
+        found_font = None
+        for font_name in font_candidates:
+            for path in font_paths:
+                full_path = os.path.join(path, font_name)
+                if os.path.exists(full_path):
+                    found_font = full_path
+                    break
+            if found_font: break
+            
+        # Fallback to just filename (system path)
+        if not found_font:
+            found_font = "arial.ttf"
+
         try:
-            # Assuming fonts are in assets/fonts or system fonts
-            # For now using default or simple path logic
-            self.font_title = ImageFont.truetype("arial.ttf", 40)
-            self.font_header = ImageFont.truetype("arial.ttf", 30)
-            self.font_body = ImageFont.truetype("arial.ttf", 20)
-            self.font_bold = ImageFont.truetype("arialbd.ttf", 24)
-            self.font_small = ImageFont.truetype("arial.ttf", 16)
+            self.font_title = ImageFont.truetype(found_font, self.SIZE_TITLE)
+            self.font_header = ImageFont.truetype(found_font, self.SIZE_HEADER)
+            self.font_body = ImageFont.truetype(found_font, self.SIZE_BODY)
+            self.font_bold = ImageFont.truetype(found_font, self.SIZE_BOLD)
+            self.font_small = ImageFont.truetype(found_font, self.SIZE_SMALL)
+            logger.info(f"Loaded font: {found_font}")
         except IOError:
-            logger.warning("Custom fonts not found, using default.")
+            logger.warning("Custom fonts not found, using default (UGLY).")
             self.font_title = ImageFont.load_default()
             self.font_header = ImageFont.load_default()
             self.font_body = ImageFont.load_default()
@@ -27,69 +71,88 @@ class ReportVisualizer:
             self.font_small = ImageFont.load_default()
     
     def _draw_header(self, draw, width, config, title):
-        # Vẽ header động theo màu của Template
         theme_color = config.get("theme_color", "#FFFFFF")
         
-        # Header Line
-        draw.rectangle([0, 0, width, 80], fill=(30, 35, 55))
-        draw.line([0, 80, width, 80], fill=theme_color, width=3)
+        # Header Background
+        draw.rectangle([0, 0, width, 140], fill=(25, 30, 50))
         
-        # Title
-        draw.text((30, 20), title.upper(), fill=theme_color, font=self.font_title)
-        draw.text((width - 200, 30), datetime.now().strftime("%d/%m %H:%M"), fill="#AAAAAA", font=self.font_body)
+        # Accent Line
+        draw.line([0, 138, width, 138], fill=theme_color, width=6)
+        
+        # Title (Centered or Left)
+        draw.text((40, 35), title.upper(), fill=theme_color, font=self.font_title)
+        
+        # Timestamp
+        time_str = datetime.now().strftime("%d/%m %H:%M")
+        # Calculate text width roughly or just align right
+        draw.text((width - 280, 55), time_str, fill=self.TEXT_SUB, font=self.font_small)
 
     def _draw_dynamic_metrics(self, draw, start_y, width, metrics: dict):
-        """
-        Vẽ các ô thông số động (Grid Layout).
-        AI trả về cái gì vẽ cái đó: Volume, Risk, Entry...
-        """
         if not metrics: return start_y
         
-        draw.text((30, start_y), "KEY METRICS", fill="#FFFFFF", font=self.font_header)
-        current_y = start_y + 40
+        # Section Title
+        draw.text((40, start_y), "KEY METRICS", fill=self.ACCENT_COLOR, font=self.font_header)
+        current_y = start_y + 60
         
-        # Chia làm 2 cột
-        col_width = (width - 60) // 2
+        # Grid Layout
+        col_width = (width - 100) // 2
+        row_height = 100
         items = list(metrics.items())
         
         for i, (key, value) in enumerate(items):
             row = i // 2
             col = i % 2
             
-            x = 30 + (col * (col_width + 10))
-            y = current_y + (row * 70)
+            x = 40 + (col * (col_width + 20))
+            y = current_y + (row * (row_height + 20))
             
-            # Draw Box
-            draw.rectangle([x, y, x + col_width, y + 60], outline="#444455", width=1)
+            # Draw Box Background
+            draw.rectangle([x, y, x + col_width, y + row_height], fill=(30, 35, 55), outline=(60, 70, 90), width=2)
             
-            # Label (Key)
-            draw.text((x + 10, y + 5), str(key).upper(), fill="#888899", font=self.font_small)
+            # Label (Key) - Top Left
+            draw.text((x + 20, y + 15), str(key).upper(), fill=self.TEXT_SUB, font=self.font_small)
             
-            # Value (Tự động đổi màu nếu thấy chữ High/Risk)
+            # Value - Center/Bottom
             val_str = str(value)
-            color = "#00FF00" # Mặc định xanh
-            if any(c in val_str.lower() for c in ["high", "sell", "danger", "10/10", "risk"]):
-                color = "#FF4500" # Đỏ
             
-            draw.text((x + 10, y + 25), val_str, fill=color, font=self.font_bold)
+            # Color Logic
+            color = "#00FF7F" # SpringGreen
+            val_lower = val_str.lower()
+            if any(c in val_lower for c in ["high", "sell", "danger", "risk", "scam", "down"]):
+                color = "#FF4500" # OrangeRed
+            elif any(c in val_lower for c in ["medium", "neutral"]):
+                color = "#FFD700" # Gold
             
-        return current_y + ((len(items) + 1) // 2 * 70) + 20
+            # Simple centering logic (approximate)
+            # Assuming ~15px per char for bold font
+            text_width = len(val_str) * 18 
+            text_x = x + 20
+            
+            draw.text((text_x, y + 45), val_str, fill=color, font=self.font_bold)
+            
+        rows = (len(items) + 1) // 2
+        return current_y + (rows * (row_height + 20)) + 40
 
     def _draw_steps_list(self, draw, start_y, steps: list):
-        """Vẽ danh sách các bước (cho Airdrop/Tutorial)"""
-        draw.text((30, start_y), "ACTION PLAN", fill="#DDA0DD", font=self.font_header)
-        y = start_y + 40
+        draw.text((40, start_y), "ACTION PLAN", fill="#DDA0DD", font=self.font_header)
+        y = start_y + 60
         for idx, step in enumerate(steps):
-            draw.text((30, y), f"{idx+1}. {step}", fill="#EEEEEE", font=self.font_body)
-            y += 35
+            # Wrap step text
+            lines = textwrap.wrap(step, width=50)
+            for line in lines:
+                draw.text((40, y), f"{idx+1}. {line}" if line == lines[0] else f"   {line}", fill=self.TEXT_MAIN, font=self.font_body)
+                y += 45
+            y += 15 # Extra space between steps
         return y
 
     def create_report_image(self, data: dict, template_code: str) -> str:
         config = get_template_config(template_code)
         style = config.get("visual_style", "DEFAULT")
         
-        W, H = 800, 1000
-        # Nếu là Security Alert, đổi nền sang đỏ đen cho nguy hiểm
+        # High Resolution Canvas
+        W, H = 1080, 1440 
+        
+        # Background Color
         bg_color = (40, 10, 10) if style == "ALERT" else self.BG_DARK
         
         img = Image.new('RGB', (W, H), color=bg_color)
@@ -98,47 +161,50 @@ class ReportVisualizer:
         # 1. Header
         self._draw_header(draw, W, config, config['name'])
         
-        current_y = 120
+        current_y = 180
         
-        # 2. Body Customization dựa trên Style
+        # 2. Alert Banner
         if style == "ALERT":
-            # Vẽ cảnh báo to
-            draw.rectangle([30, current_y, W-30, current_y+60], fill="#FF0000")
-            draw.text((W//2 - 100, current_y+15), "⚠️ SECURITY WARNING", fill="white", font=self.font_header)
-            current_y += 100
+            draw.rectangle([40, current_y, W-40, current_y+100], fill="#8B0000")
+            draw.text((W//2 - 200, current_y+25), "⚠️ SECURITY WARNING", fill="white", font=self.font_header)
+            current_y += 140
             
-        # 3. Dynamic Metrics (Đây là phần quan trọng nhất để fix lỗi hardcode)
-        # AI trả về metrics gì thì hiển thị cái đó
+        # 3. Metrics
         metrics = data.get("metrics", {})
-        # Fallback nếu AI cũ trả về top_assets
         if "top_assets" in data and not metrics:
              metrics["Assets"] = ", ".join(data["top_assets"])
              
         current_y = self._draw_dynamic_metrics(draw, current_y, W, metrics)
         
-        # 4. Content (Summary)
-        draw.text((30, current_y), "ANALYSIS", fill=config.get("theme_color"), font=self.font_header)
+        # 4. Analysis / Summary
+        draw.text((40, current_y), "ANALYSIS", fill=config.get("theme_color"), font=self.font_header)
+        current_y += 60
+        
         summary = data.get("summary", data.get("action_summary", ""))
         
-        # Wrap text logic simple
-        import textwrap
-        lines = textwrap.wrap(summary, width=60) # Approx chars per line
+        # Text Wrapping
+        # Width 1080px, font size 32px (~16px width avg) -> ~60 chars
+        lines = textwrap.wrap(summary, width=55)
         
-        text_y = current_y + 40
-        for line in lines[:15]: # Limit lines to prevent overflow
-            draw.text((30, text_y), line, fill="white", font=self.font_body)
-            text_y += 25
+        for line in lines[:20]: # Limit to avoid overflow
+            draw.text((40, current_y), line, fill=self.TEXT_MAIN, font=self.font_body)
+            current_y += 45
             
-        current_y = text_y + 40
+        current_y += 40
 
-        # 5. Specific Sections
+        # 5. Steps (if any)
         if style == "STEP_LIST" and "steps" in data:
             self._draw_steps_list(draw, current_y, data["steps"])
             
-        # Save image
+        # 6. Footer
+        draw.line([40, H-60, W-40, H-60], fill=(60, 70, 90), width=2)
+        draw.text((W//2 - 100, H-45), "SanKeo Bot AI", fill=self.TEXT_SUB, font=self.font_small)
+
+        # Save
         os.makedirs("temp_images", exist_ok=True)
         filename = f"temp_images/report_{template_code}_{int(datetime.now().timestamp())}.png"
         img.save(filename)
+        logger.info(f"Generated report image: {filename}")
         return filename
 
 visualizer = ReportVisualizer()

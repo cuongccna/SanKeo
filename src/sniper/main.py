@@ -59,10 +59,15 @@ AI_PROMPT = marketing_config.get("ai_prompt", "")
 
 # --- AI Setup ---
 API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 model = None
 if API_KEY:
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+    try:
+        model = genai.GenerativeModel(MODEL_NAME)
+        logger.info(f"AI Model loaded: {MODEL_NAME}")
+    except Exception as e:
+        logger.error(f"Failed to load AI model {MODEL_NAME}: {e}")
 else:
     logger.warning("GEMINI_API_KEY missing. Using static messages only.")
 
