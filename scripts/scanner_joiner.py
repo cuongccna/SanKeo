@@ -15,11 +15,11 @@ SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 PROXIES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "proxies.json")
 HISTORY_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scanned_history.json")
 
-KEYWORDS = ['đầu tư', 'chứng khoán', 'crypto chat', 'tín hiệu coin', 'việc làm online',"Crypto Việt Nam","Cộng đồng Crypto","Cộng đồng Bitcoin","Cộng đồng Ethereum","Trade coin","Học đầu tư Crypto","Hội những người chơi Crypto","Chia sẻ kiến thức Crypto","Kênh tin tức Crypto","Phân tích kỹ thuật Crypto","Cộng đồng NFT Việt Nam","DeFi Việt Nam","Cộng đồng Blockchain Việt Nam","Crypto Signals Việt Nam","Crypto Trading Việt Nam","Crypto Alerts Việt Nam","Crypto Tips Việt Nam","Crypto News Việt Nam","Crypto Discussion Việt Nam","Crypto Analysis Việt Nam","Crypto Education Việt Nam","Crypto Community Việt Nam","Crypto Investors Việt Nam","Crypto Enthusiasts Việt Nam","Crypto Traders Việt Nam","Crypto Mining Việt Nam","Crypto Projects Việt Nam","Crypto Startups Việt Nam","Crypto Developers Việt Nam","Crypto Entrepreneurs Việt Nam","Crypto Influencers Việt Nam","Crypto Bloggers Việt Nam","Crypto YouTubers Việt Nam","Crypto Podcasters Việt Nam","Crypto Events Việt Nam","Crypto Meetups Việt Nam","Crypto Workshops Việt Nam","Crypto Conferences Việt Nam"]
+KEYWORDS = ['đầu tư', 'chứng khoán', 'crypto chat', 'tín hiệu coin', "Crypto Việt Nam","Cộng đồng Crypto","Cộng đồng Bitcoin","Cộng đồng Ethereum","Trade coin","Học đầu tư Crypto","Hội những người chơi Crypto","Chia sẻ kiến thức Crypto","Kênh tin tức Crypto","Phân tích kỹ thuật Crypto","Cộng đồng NFT Việt Nam","DeFi Việt Nam","Cộng đồng Blockchain Việt Nam","Crypto Signals Việt Nam","Crypto Trading Việt Nam","Crypto Alerts Việt Nam","Crypto Tips Việt Nam","Crypto News Việt Nam","Crypto Discussion Việt Nam","Crypto Analysis Việt Nam","Crypto Education Việt Nam","Crypto Community Việt Nam","Crypto Investors Việt Nam","Crypto Enthusiasts Việt Nam","Crypto Traders Việt Nam","Crypto Mining Việt Nam","Crypto Projects Việt Nam","Crypto Startups Việt Nam","Crypto Developers Việt Nam","Crypto Entrepreneurs Việt Nam","Crypto Influencers Việt Nam","Crypto Bloggers Việt Nam","Crypto YouTubers Việt Nam","Crypto Podcasters Việt Nam","Crypto Events Việt Nam","Crypto Meetups Việt Nam","Crypto Workshops Việt Nam","Crypto Conferences Việt Nam"]
 
 MIN_MEMBERS = 500
 MAX_MEMBERS = 1000000
-MAX_JOINS_PER_RUN = 5
+MAX_JOINS_PER_RUN = 10
 
 # Setup Logging
 logging.basicConfig(

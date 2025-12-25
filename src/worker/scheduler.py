@@ -78,15 +78,19 @@ class TemplateScheduler:
                 logger.info(f"Processing template {code} for {len(subs)} users...")
                 
                 try:
-                    # Generate Report ONCE
-                    report = await template_processor.process_template(code)
+                    # Generate Report ONCE (Returns dict with text and image_path)
+                    report_result = await template_processor.process_template(code)
                     
-                    if report:
+                    if report_result:
+                        report_text = report_result.get("text", "")
+                        image_path = report_result.get("image_path")
+                        
                         # Send to all users
                         for sub in subs:
                             notification = {
                                 "user_id": sub.user_id,
-                                "message": f"🔔 <b>Báo cáo định kỳ: {template.name}</b>\n\n{report}",
+                                "message": f"🔔 <b>Báo cáo định kỳ: {template.name}</b>\n\n{report_text}",
+                                "image_path": image_path,
                                 "type": "TEMPLATE_REPORT"
                             }
                             await redis.lpush(QUEUE_NOTIFICATIONS, json.dumps(notification))

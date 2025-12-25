@@ -1,6 +1,6 @@
 import re
 import hashlib
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Pattern
 from pydantic import BaseModel, Field
 from cachetools import TTLCache
 
@@ -13,6 +13,57 @@ class FilterRule(BaseModel):
     must_have: List[str] = Field(default_factory=list, description="Danh sách từ khóa BẮT BUỘC phải có (OR logic)")
     must_not_have: List[str] = Field(default_factory=list, description="Danh sách từ khóa KHÔNG được có")
     source_channels: Optional[List[int]] = Field(None, description="Chỉ lọc từ các channel ID này (None = tất cả)")
+
+    # Cache pre-compiled regex để tăng tốc độ (Không lưu vào DB, chỉ dùng runtime)
+    _compiled_must_have: List[Pattern] = []
+    _compiled_must_not_have: List[Pattern] = []
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._compile_patterns()
+
+    def _compile_patterns(self):
+        """
+        Compile regex trước để không phải làm việc này mỗi khi có tin nhắn mới.
+        """
+        self._compiled_must_have = [self._create_regex(k) for k in self.must_have]
+        self._compiled_must_not_have = [self._create_regex(k) for k in self.must_not_have]
+
+    def _create_regex(self, keyword: str) -> Pattern:
+        """
+        Tạo regex thông minh:
+        - Xử lý đúng boundary cho từ thường và từ có ký tự đặc biệt ($BTC).
+        - Hỗ trợ user nhập regex trực tiếp nếu muốn.
+        """
+        # Nếu user cố tình nhập regex phức tạp (có chứa . * + ? ...)
+        is_user_regex = any(c in keyword for c in r".^*+?{}[]\|()")
+        
+        if is_user_regex:
+            try:
+                return re.compile(keyword, re.IGNORECASE)
+            except re.error:
+                # Fallback về text thường nếu regex lỗi
+                pass
+
+        escaped_kw = re.escape(keyword)
+        
+        # LOGIC QUAN TRỌNG:
+        # Nếu keyword bắt đầu bằng ký tự từ (a-z, 0-9), dùng \b phía trước.
+        # Nếu keyword bắt đầu bằng symbol ($, #, @), dùng (?:^|\s) để bắt khoảng trắng.
+        # Kiểm tra ký tự đầu tiên
+        first_char = keyword[0] if keyword else ''
+        last_char = keyword[-1] if keyword else ''
+        
+        prefix = r'\b' if first_char.isalnum() or first_char == '_' else r'(?:^|\s)'
+        suffix = r'\b' if last_char.isalnum() or last_char == '_' else r'(?:\s|$)'
+        
+        return re.compile(f"{prefix}{escaped_kw}{suffix}", re.IGNORECASE)
+
+    class Config:
+        # Cho phép lưu private attributes (_compiled_...)
+        underscore_attrs_are_private = True
+        # Pydantic V2 compatibility (if needed, but Config is V1 style)
+        extra = "ignore" 
 
 class MessageProcessor:
     """
@@ -58,41 +109,21 @@ class MessageProcessor:
 
     def check_keywords(self, normalized_text: str, rule: FilterRule) -> bool:
         """
-        Kiểm tra text có khớp với rule không.
-        Logic: (Có ít nhất 1 từ trong must_have) AND (Không có từ nào trong must_not_have)
+        Kiểm tra khớp rule cực nhanh nhờ pre-compiled regex.
         """
         # 1. Check Must Not Have (Fail fast)
-        for keyword in rule.must_not_have:
-            # Dùng \b để bắt chính xác từ (word boundary), tránh match nhầm (ví dụ "bit" trong "bitcoin")
-            # Escape keyword để an toàn với regex
-            pattern = r'\b' + re.escape(keyword) + r'\b'
-            if re.search(pattern, normalized_text, re.IGNORECASE):
+        for pattern in rule._compiled_must_not_have:
+            if pattern.search(normalized_text):
                 return False
 
         # 2. Check Must Have
-        if not rule.must_have:
-            return True # Nếu không có điều kiện must_have, coi như pass (hoặc tùy logic nghiệp vụ)
+        if not rule._compiled_must_have:
+            return True # Pass nếu không có điều kiện
 
-        for keyword in rule.must_have:
-            # Hỗ trợ Regex trong keyword nếu người dùng nhập (ví dụ: "eth|btc")
-            # Tuy nhiên ở mức cơ bản, ta giả sử keyword là plain text.
-            # Nếu muốn hỗ trợ regex từ user, cần try-catch re.error.
-            
-            # Ở đây ta dùng simple regex search với word boundary
-            try:
-                # Nếu keyword chứa ký tự đặc biệt regex, ta coi như user muốn dùng regex
-                if any(c in keyword for c in r".^$*+?{}[]\|()"):
-                     if re.search(keyword, normalized_text, re.IGNORECASE):
-                         return True
-                else:
-                    # Keyword thường -> match chính xác từ
-                    pattern = r'\b' + re.escape(keyword) + r'\b'
-                    if re.search(pattern, normalized_text, re.IGNORECASE):
-                        return True
-            except re.error:
-                # Fallback nếu regex lỗi: tìm string thường
-                if keyword.lower() in normalized_text:
-                    return True
+        # OR Logic: Chỉ cần 1 pattern khớp là được
+        for pattern in rule._compiled_must_have:
+            if pattern.search(normalized_text):
+                return True
 
         return False
 

@@ -76,6 +76,14 @@ async def load_blacklist():
     except Exception as e:
         logger.error(f"Failed to load blacklist: {e}")
 
+async def refresh_config_loop():
+    """Periodically refresh configurations."""
+    while True:
+        await asyncio.sleep(300)  # Refresh every 5 minutes
+        logger.info("Refreshing configurations...")
+        await load_blacklist()
+        await load_source_configs()
+
 async def join_channel(link: str):
     """
     Join a channel/group with Rate Limiting and FloodWait protection.
@@ -231,6 +239,9 @@ async def main():
         redis = await get_redis()
         await redis.ping()
         logger.info("Redis connection: OK")
+        
+        # Start config refresh loop
+        asyncio.create_task(refresh_config_loop())
         
         logger.info("Ingestor is running. Waiting for messages...")
         

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 from decimal import Decimal
 
-from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
@@ -37,6 +37,9 @@ BUSINESS_DAILY_RATE = BUSINESS_PRICE / 30
 
 # Queue for bot notifications
 QUEUE_PAYMENT_NOTIFICATIONS = "queue:payment_notifications"
+
+# Security Config
+SEPAY_API_TOKEN = os.getenv("SEPAY_API_TOKEN")
 
 
 # ============ FastAPI App ============
@@ -81,6 +84,26 @@ class WebhookResponse(BaseModel):
 
 
 # ============ Helpers ============
+async def verify_sepay_signature(authorization: str = Header(None)):
+    """
+    KIỂM TRA BẢO MẬT: Xác thực request đến từ SePay.
+    SePay gửi token dạng: "Bearer <token>" hoặc "Apikey <token>"
+    """
+    if not SEPAY_API_TOKEN:
+        logger.warning("SEPAY_API_TOKEN not set! Skipping security check (DANGEROUS).")
+        return
+
+    if not authorization:
+        raise HTTPException(status_code=403, detail="Missing Authorization Header")
+    
+    # Tách token từ header
+    try:
+        scheme, token = authorization.split()
+        if token != SEPAY_API_TOKEN:
+            raise HTTPException(status_code=403, detail="Invalid Token")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Invalid Header Format")
+
 def parse_user_id_from_content(content: str) -> Optional[int]:
     """
     Parse user ID from transfer content.
@@ -130,49 +153,45 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
             logger.warning(f"User {user_id} not found for payment")
             return False
         
-        # Determine Plan and Rate
-        # Logic:
-        # 1. If amount >= BUSINESS_PRICE -> Upgrade/Extend BUSINESS
-        # 2. If user is already BUSINESS -> Extend BUSINESS (even with small amount)
-        # 3. Else -> VIP
-        
-        target_plan = PlanType.VIP
-        daily_rate = VIP_DAILY_RATE
-        
-        if amount >= BUSINESS_PRICE:
-            target_plan = PlanType.BUSINESS
-            daily_rate = BUSINESS_DAILY_RATE
-        elif user.plan_type == PlanType.BUSINESS:
-            target_plan = PlanType.BUSINESS
-            daily_rate = BUSINESS_DAILY_RATE
-            
-        # Calculate days to add
-        days_to_add = amount / daily_rate
-        
-        # Calculate new expiry date
+        # 3. Logic Quy Đổi Gói (FIX LỖ HỔNG UPGRADE)
         now = datetime.utcnow()
-        
-        # Handle timezone awareness for comparison
         current_expiry = user.expiry_date
-        if current_expiry:
-            # If current_expiry is aware but now is naive, make now aware (UTC)
-            if current_expiry.tzinfo is not None and now.tzinfo is None:
-                from datetime import timezone
-                now = now.replace(tzinfo=timezone.utc)
-            # If current_expiry is naive but now is aware, make current_expiry aware
-            elif current_expiry.tzinfo is None and now.tzinfo is not None:
-                from datetime import timezone
-                current_expiry = current_expiry.replace(tzinfo=timezone.utc)
-
+        
+        # Chuẩn hóa timezone
+        if current_expiry and current_expiry.tzinfo is None:
+             current_expiry = current_expiry.replace(tzinfo=None) # Giữ naive để so sánh với now (naive)
+        
+        # Tính số dư hiện tại (Remaining Value)
+        remaining_money = 0.0
         if current_expiry and current_expiry > now:
-            # Extend from current expiry
-            new_expiry = current_expiry + timedelta(days=days_to_add)
+            remaining_days = (current_expiry - now).days
+            # Nếu gói cũ là BUSINESS, tính theo giá Business, ngược lại tính theo VIP
+            current_rate = BUSINESS_DAILY_RATE if user.plan_type == PlanType.BUSINESS else VIP_DAILY_RATE
+            remaining_money = remaining_days * current_rate
+
+        # Tổng tiền = Tiền còn lại + Tiền mới nạp
+        total_fund = remaining_money + amount
+        
+        # Xác định gói mới
+        # Nếu tổng tiền đủ mua > 15 ngày Business HOẶC đang là Business -> Giữ Business
+        # (Logic này tùy bạn chỉnh, ở đây tôi ưu tiên giữ hạng Business nếu user đã từng mua)
+        is_business_upgrade = amount >= BUSINESS_PRICE or user.plan_type == PlanType.BUSINESS
+        
+        if is_business_upgrade:
+            new_plan = PlanType.BUSINESS
+            new_daily_rate = BUSINESS_DAILY_RATE
         else:
-            # Start fresh
-            new_expiry = now + timedelta(days=days_to_add)
+            new_plan = PlanType.VIP
+            new_daily_rate = VIP_DAILY_RATE
+            
+        # Tính tổng ngày sử dụng mới dựa trên TỔNG TIỀN
+        total_days = total_fund / new_daily_rate
+        
+        # Set ngày hết hạn mới tính từ NOW
+        new_expiry = now + timedelta(days=total_days)
         
         # Update user
-        user.plan_type = target_plan
+        user.plan_type = new_plan
         user.expiry_date = new_expiry
         
         # Create transaction record
@@ -180,13 +199,14 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
             id=transaction_id,
             user_id=user_id,
             amount=Decimal(str(amount)),
-            status="SUCCESS"
+            status="SUCCESS",
+            metadata={"converted_from_plan": user.plan_type, "added_days": total_days}
         )
         session.add(transaction)
         
         await session.commit()
         
-        logger.info(f"Payment processed: user={user_id}, plan={target_plan}, days={days_to_add:.2f}, amount={amount}")
+        logger.info(f"Payment processed: user={user_id}, plan={new_plan}, days={total_days:.2f}, amount={amount}")
         return True
 
 
@@ -230,7 +250,7 @@ async def health_check():
 
 
 @app.post("/webhook/sepay", response_model=WebhookResponse)
-async def sepay_webhook(data: SePayWebhookData):
+async def sepay_webhook(data: SePayWebhookData, _ = Depends(verify_sepay_signature)):
     """
     Handle SePay webhook for incoming bank transfers.
     """

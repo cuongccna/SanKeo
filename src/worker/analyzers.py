@@ -6,7 +6,11 @@ from src.common.logger import logger
 from src.common.redis_client import get_redis
 from src.database.db import AsyncSessionLocal
 from src.database.models import AnalysisTemplate
-from src.common.ai_client import ai_client
+from src.worker.ai_engine import AIEngine
+from src.worker.visualizer import visualizer
+
+# Initialize AI Engine locally for worker usage
+ai_engine = AIEngine()
 
 class TemplateProcessor:
     def __init__(self):
@@ -80,9 +84,27 @@ class TemplateProcessor:
 
         logger.info(f"Generating report for {template_code} with {len(messages)} messages.")
         
-        # Call AI
-        report = await ai_client.generate_template_report(messages, template.name)
-        return report
+        # 1. Call AI to get Structured Data (JSON)
+        report_data = await ai_engine.generate_structured_report(messages, template_code)
+        
+        if not report_data:
+            logger.error(f"Failed to generate structured report for {template_code}")
+            return None
+            
+        # 2. Generate Image using Visualizer
+        try:
+            image_path = visualizer.create_report_image(report_data, template_code)
+            logger.info(f"Generated report image: {image_path}")
+        except Exception as e:
+            logger.error(f"Visualizer failed: {e}")
+            image_path = None
+            
+        # 3. Return both text summary and image path
+        return {
+            "text": report_data.get("action_summary", "No summary available."),
+            "image_path": image_path,
+            "data": report_data
+        }
 
     async def buffer_message(self, tag: str, message_data: dict):
         """

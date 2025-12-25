@@ -10,6 +10,7 @@ from typing import List, Dict
 from dotenv import load_dotenv
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
+from pyrogram.errors import FloodWait, UserBannedInChannel
 import google.generativeai as genai
 
 # Load environment variables
@@ -29,8 +30,10 @@ PROXIES_FILE = os.path.join(BASE_DIR, "proxies.json")
 CONFIG_FILE = os.path.join(BASE_DIR, "marketing_config.json")
 
 # --- Global State ---
-replied_cache: Dict[int, float] = {}  # {group_id: timestamp}
-COOLDOWN_SECONDS = 1800  # 30 minutes
+# Cache dùng chung cho TOÀN BỘ clients để tránh việc 5 bot cùng spam 1 nhóm
+# Structure: {group_id: timestamp}
+shared_replied_cache: Dict[int, float] = {} 
+BASE_COOLDOWN = 1800 # 30 minutes
 clients: List[Client] = []
 
 # --- Load Config ---
@@ -38,7 +41,10 @@ def load_json(filepath):
     if not os.path.exists(filepath):
         return {}
     with open(filepath, "r", encoding="utf-8") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return {}
 
 marketing_config = load_json(CONFIG_FILE)
 proxies_config = load_json(PROXIES_FILE)
@@ -47,24 +53,19 @@ STATIC_MESSAGES = marketing_config.get("static_messages", [])
 AI_PROMPT = marketing_config.get("ai_prompt", "")
 
 # --- AI Setup ---
-# Try to load API Key from env or config
 API_KEY = os.getenv("GEMINI_API_KEY")
+model = None
 if API_KEY:
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-pro')
 else:
-    model = None
-    logger.warning("GEMINI_API_KEY not found. AI generation will be disabled, using static messages only.")
+    logger.warning("GEMINI_API_KEY missing. Using static messages only.")
 
 # --- Helper Functions ---
 
 def get_proxy_for_session(session_name: str):
-    """
-    Extract phone number from session name and find matching proxy.
-    Session name format expected: '84912345678.session' or similar.
-    """
-    # Simple regex to find the phone number part
-    match = re.search(r"(\d+)", session_name)
+    # Fix regex để bắt chính xác số điện thoại (bỏ qua các ký tự khác)
+    match = re.search(r"(?:^|_)(\d+)(?:_|\.|$)", session_name)
     if match:
         phone = match.group(1)
         if phone in proxies_config:
@@ -78,130 +79,145 @@ def get_proxy_for_session(session_name: str):
             }
     return None
 
-async def get_ai_reply():
-    """Generate a reply using Gemini AI."""
-    if not model:
+async def generate_reply_content():
+    """
+    Logic thông minh: 
+    - 40% dùng AI (nếu có) để tạo nội dung mới lạ.
+    - 60% dùng tin nhắn tĩnh (nhanh, an toàn, đỡ tốn quota).
+    """
+    use_ai = model and random.random() < 0.4
+    
+    if use_ai:
+        try:
+            # Thêm timeout để tránh treo bot nếu API lag
+            response = await asyncio.wait_for(
+                model.generate_content_async(AI_PROMPT), 
+                timeout=10.0
+            )
+            if response.text:
+                return response.text.strip()
+        except asyncio.TimeoutError:
+            logger.warning("AI Generation timed out, falling back to static.")
+        except Exception as e:
+            logger.error(f"AI Error: {e}")
+    
+    # Fallback hoặc Random choice
+    if STATIC_MESSAGES:
         return random.choice(STATIC_MESSAGES)
-    
-    try:
-        response = await model.generate_content_async(AI_PROMPT)
-        if response.text:
-            return response.text.strip()
-    except Exception as e:
-        logger.error(f"AI Generation failed: {e}")
-    
-    # Fallback
-    return random.choice(STATIC_MESSAGES)
-
-def get_random_message():
-    """
-    Returns a message either from AI (simulated/real) or Static list.
-    For stability and speed, we mix them or prefer static if AI is slow.
-    """
-    # 30% chance to try AI generation if available, else use static
-    # This keeps it fast but occasionally fresh.
-    if model and random.random() < 0.3:
-        # We can't await here easily without making this async, 
-        # so for now let's stick to the async handler calling the async AI function.
-        pass 
-    return random.choice(STATIC_MESSAGES)
+    return "Inbox me for details!" # Default nếu config rỗng
 
 # --- Main Logic ---
 
 async def main():
-    # 1. Find Session Files
     session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.session"))
-    
-    # Filter out ingestor and non-marketing sessions
-    # Assuming any session NOT named 'ingestor_session' is a marketing session
     marketing_sessions = [
         f for f in session_files 
-        if "ingestor_session" not in os.path.basename(f) 
-        and "journal" not in f
+        if "ingestor" not in os.path.basename(f) and "journal" not in f
     ]
 
     if not marketing_sessions:
-        logger.error("No marketing sessions found in sessions/ directory.")
+        logger.error("No sessions found.")
         return
 
-    logger.info(f"Found {len(marketing_sessions)} marketing sessions: {[os.path.basename(f) for f in marketing_sessions]}")
+    logger.info(f"Found {len(marketing_sessions)} sessions.")
 
-    # 2. Initialize Clients
     for session_path in marketing_sessions:
         session_name = os.path.basename(session_path).replace(".session", "")
-        
-        # Determine Proxy
         proxy = get_proxy_for_session(session_name)
         
         client = Client(
             name=session_name,
             workdir=SESSIONS_DIR,
-            proxy=proxy
+            proxy=proxy,
+            sleep_threshold=30 # Tự động ngủ nếu dính FloodWait dưới 30s
         )
         
-        # Attach Event Handler
-        @client.on_message(filters.group & filters.text & ~filters.me)
+        # Filter: Group only, Text only, Not from Me, Not from Bots (tránh trigger bot khác)
+        @client.on_message(filters.group & filters.text & ~filters.me & ~filters.bot)
         async def handle_message(c: Client, m: Message):
             try:
                 chat_id = m.chat.id
                 text = m.text.lower()
 
-                # 1. Check Rate Limit (Global per group)
+                # 1. Global Cooldown Check (Check bộ nhớ chung)
                 now = asyncio.get_running_loop().time()
-                last_reply = replied_cache.get(chat_id, 0)
+                last_reply = shared_replied_cache.get(chat_id, 0)
                 
-                if now - last_reply < COOLDOWN_SECONDS:
-                    return # Still in cooldown
+                # Thêm "Jitter" (độ lệch ngẫu nhiên) vào cooldown để tránh pattern máy móc
+                # Ví dụ: 30 phút + random(0-5 phút)
+                current_cooldown = BASE_COOLDOWN + random.uniform(0, 300)
+                
+                if now - last_reply < current_cooldown:
+                    return
 
                 # 2. Check Keywords
                 if any(kw in text for kw in KEYWORDS):
                     
-                    # Update Rate Limit IMMEDIATELY to prevent race conditions from other bots
-                    replied_cache[chat_id] = now
+                    # === CRITICAL FIX: RACE CONDITION ===
+                    # Double-check lock: Kiểm tra lại 1 lần nữa sau khi đã match keyword
+                    # Vì có thể 1 bot khác vừa set cache trong mili-giây trước
+                    if asyncio.get_running_loop().time() - shared_replied_cache.get(chat_id, 0) < current_cooldown:
+                        return
+
+                    # Update Cache NGAY LẬP TỨC để chặn các bot khác trong cùng group
+                    shared_replied_cache[chat_id] = now
                     
-                    logger.info(f"[{c.name}] Detected keyword in {m.chat.title} ({chat_id})")
+                    logger.info(f"[{c.name}] Keyword detected in {m.chat.title}")
 
-                    # 3. Random Delay (Human Simulation)
-                    delay = random.uniform(3, 8)
-                    await asyncio.sleep(delay)
+                    # 3. Safety Checks (Quan trọng)
+                    # Không reply tin nhắn quá ngắn (ví dụ: "hi", "ok") dễ bị coi là spam vô duyên
+                    if len(text) < 3: 
+                        return
+                    
+                    # (Tùy chọn) Không reply nếu user là Admin (Cần gọi API, tốn time nên cân nhắc)
+                    # member = await c.get_chat_member(chat_id, m.from_user.id)
+                    # if member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
+                    #     return
 
-                    # 4. Send Typing Action
+                    # 4. Human Behavior Simulation
+                    # Đọc tin nhắn (Mark as read)
+                    await c.read_chat_history(chat_id, m.id)
+                    
+                    # Delay ngẫu nhiên lâu hơn chút (5-12s)
+                    await asyncio.sleep(random.uniform(5, 12))
+
+                    # Typing action
                     await c.send_chat_action(chat_id, enums.ChatAction.TYPING)
-                    # Simulate typing time based on message length (approx)
-                    await asyncio.sleep(random.uniform(1, 3))
+                    await asyncio.sleep(random.uniform(2, 5))
 
-                    # 5. Generate Content
-                    # Try AI first, fallback to static
-                    reply_text = await get_ai_reply()
-
-                    # 6. Reply
-                    await m.reply_text(reply_text, parse_mode=enums.ParseMode.MARKDOWN)
+                    # 5. Generate & Send
+                    reply_text = await generate_reply_content()
                     
-                    logger.info(f"[{c.name}] Replied to user {m.from_user.id} in {m.chat.title}: '{reply_text}'")
+                    try:
+                        await m.reply_text(reply_text, parse_mode=enums.ParseMode.MARKDOWN)
+                        logger.info(f"[{c.name}] Replied success.")
+                    except FloodWait as e:
+                        logger.warning(f"FloodWait: Sleeping {e.value}s")
+                        await asyncio.sleep(e.value)
+                    except UserBannedInChannel:
+                        logger.error(f"[{c.name}] Banned in group {chat_id}. Removing from list.")
+                        # Logic để rời nhóm hoặc đánh dấu nhóm này vào blacklist (cần code thêm)
+                    except Exception as e:
+                        logger.error(f"Send failed: {e}")
 
             except Exception as e:
-                logger.error(f"Error in handler: {e}")
+                # Log lỗi nhưng không crash bot
+                pass
 
         clients.append(client)
 
-    # 3. Run Clients
     if not clients:
-        logger.error("No clients initialized.")
         return
 
-    logger.info("Starting all marketing clients...")
+    logger.info("Starting clients...")
+    # Dùng compose để chạy mượt hơn thay vì gather đơn thuần nếu số lượng acc lớn
     await asyncio.gather(*[c.start() for c in clients])
+    logger.info("Sniper is active.")
     
-    # Keep running
-    logger.info("Sniper module is running. Press Ctrl+C to stop.")
     await asyncio.Event().wait()
-
-    # Cleanup (Optional, usually handled by OS on force kill)
-    for c in clients:
-        await c.stop()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Sniper stopped by user.")
+        logger.info("Stopped.")

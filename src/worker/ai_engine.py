@@ -1,7 +1,9 @@
 import google.generativeai as genai
 import PIL.Image
+import json
 from src.common.config import settings
 from src.common.logger import logger
+from src.common.template_registry import get_template_config
 
 class AIEngine:
     def __init__(self):
@@ -17,6 +19,54 @@ class AIEngine:
         except Exception as e:
             logger.error(f"Failed to initialize AI Engine: {e}")
             self.model = None
+
+    async def generate_structured_report(self, messages: list, template_code: str) -> dict:
+        if not self.model:
+            return None
+            
+        config = get_template_config(template_code)
+        
+        # 1. Context từ tin nhắn
+        context_text = "\n---\n".join(messages[:30])
+        
+        # 2. Dynamic Prompt từ Config
+        system_prompt = f"""
+        {config['ai_prompt']}
+        
+        Dữ liệu đầu vào:
+        {context_text}
+        
+        YÊU CẦU BẮT BUỘC:
+        1. Trả về JSON hợp lệ (không markdown, không code block).
+        2. Nếu không có dữ liệu cụ thể, để null hoặc "N/A".
+        3. Field "metrics" là một Dictionary chứa các chỉ số quan trọng nhất (Key-Value) để hiển thị lên ảnh. 
+           Ví dụ: {{"Risk": "High", "Volume": "50M"}} hoặc {{"Shill Groups": "5", "Entry": "$0.5"}}
+           AI hãy tự chọn 3-4 chỉ số quan trọng nhất dựa trên ngữ cảnh.
+        """
+
+        try:
+            response = await self.model.generate_content_async(system_prompt)
+            raw_text = response.text.strip()
+            
+            # Clean up markdown code blocks
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+                
+            data = json.loads(raw_text.strip())
+            
+            # Đảm bảo luôn có field này để Visualizer không lỗi
+            if "metrics" not in data: 
+                data["metrics"] = {}
+                
+            return data
+            
+        except Exception as e:
+            logger.error(f"AI Error for {template_code}: {e}")
+            return None
 
     async def generate_text(self, prompt: str) -> str:
         """
