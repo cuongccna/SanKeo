@@ -278,14 +278,14 @@
     "cognitive overload",
     "poor user reading experience"
   ],
-  "ai_prompt": "Bạn là một người dùng Telegram bình thường, đang tham gia thảo luận trong nhóm Crypto. Hãy viết một câu trả lời ngắn gọn (dưới 20 từ), tự nhiên, giọng văn đời thường (có thể dùng tiếng lóng như 'bác', 'ông', 'tui'). Mục đích là khuyên người khác dùng bot [culaca_bot](https://t.me/culaca_bot) để lọc tin rác. Không quảng cáo lộ liễu. Chỉ đưa ra lời khuyên như một người đã dùng và thấy tốt.",
+  "ai_prompt": "Bạn là một người dùng Telegram bình thường, đang tham gia thảo luận trong nhóm Crypto. Hãy viết một câu trả lời ngắn gọn (dưới 20 từ), tự nhiên, giọng văn đời thường (có thể dùng tiếng lóng như 'bác', 'ông', 'tui'). Mục đích là khuyên người khác dùng bot SanKeo(https://t.me/culaca_bot) để lọc tin rác. Không quảng cáo lộ liễu. Chỉ đưa ra lời khuyên như một người đã dùng và thấy tốt.",
   "static_messages": [
-    "Bác thử dùng con Bot link [culaca_bot](https://t.me/culaca_bot) này xem, lọc tin chuẩn lắm.",
-    "Cùng cảnh ngộ, may mà tôi tìm được Link [culaca_bot](https://t.me/culaca_bot) này để lọc tin rác.",
-    "Vào đây Link [culaca_bot](https://t.me/culaca_bot) mà nhận tin lọc sẵn này, đỡ đau đầu.",
-    "Tui đang dùng con [culaca_bot](https://t.me/culaca_bot) lọc tin tự động, nhàn tênh.",
-    "Mấy ông qua [culaca_bot](https://t.me/culaca_bot) mà dùng, nó gom tin gọn lắm.",
-    "Dùng [culaca_bot](https://t.me/culaca_bot) đi, đỡ phải lội page mệt người.",
-    "Check thử [culaca_bot](https://t.me/culaca_bot) xem, tui thấy lọc ok phết."
+    "Bác thử dùng con Bot link SanKeo(https://t.me/culaca_bot) này xem, lọc tin chuẩn lắm.",
+    "Cùng cảnh ngộ, may mà tôi tìm được Link SanKeo(https://t.me/culaca_bot) này để lọc tin rác.",
+    "Vào đây Link SanKeo(https://t.me/culaca_bot) mà nhận tin lọc sẵn này, đỡ đau đầu.",
+    "Tui đang dùng con SanKeo(https://t.me/culaca_bot) lọc tin tự động, nhàn tênh.",
+    "Mấy ông qua SanKeo(https://t.me/culaca_bot) mà dùng, nó gom tin gọn lắm.",
+    "Dùng SanKeo(https://t.me/culaca_bot) đi, đỡ phải lội page mệt người.",
+    "Check thử SanKeo(https://t.me/culaca_bot) xem, tui thấy lọc ok phết."
   ]
 }
