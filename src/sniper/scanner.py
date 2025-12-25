@@ -66,7 +66,7 @@ async def run_scanner_cycle(client: Client):
             logger.info("Reached MAX_JOINS_PER_RUN. Stopping scanner cycle.")
             break
 
-        # logger.info(f"🔎 Searching for keyword: '{keyword}'")
+        logger.info(f"🔎 Searching for keyword: '{keyword}'")
         
         try:
             results = await client.invoke(
@@ -89,11 +89,11 @@ async def run_scanner_cycle(client: Client):
                 
                 is_broadcast = getattr(chat_raw, 'broadcast', False)
                 if is_broadcast:
-                    # logger.debug(f"Skipping {title}: Broadcast Channel")
+                    logger.info(f"Skipping {title}: Broadcast Channel")
                     continue
 
                 if history.exists(chat_id):
-                    # logger.debug(f"Skipping {title}: Already scanned")
+                    logger.info(f"Skipping {title}: Already scanned")
                     continue
                 
                 history.add(chat_id)
