@@ -226,17 +226,26 @@ async def main():
     
     # --- Background Scanner Task ---
     async def scanner_loop(client):
-        # Initial delay to let the bot settle
-        await asyncio.sleep(60) 
+        # Random start delay để các bot không chạy scanner cùng 1 giây
+        await asyncio.sleep(random.randint(60, 300))
+        
         while True:
             try:
+                # Kiểm tra xem client còn sống không
+                if not client.is_connected:
+                    try:
+                        await client.start()
+                    except:
+                        pass
+
                 await run_scanner_cycle(client)
-            except Exception as e:
-                logger.error(f"Scanner loop error: {e}")
             
-            # Run every 4 hours (plus random jitter)
-            sleep_duration = 4 * 3600 + random.randint(0, 600)
-            logger.info(f"Scanner sleeping for {sleep_duration}s...")
+            except Exception as e:
+                logger.error(f"[{client.name}] Scanner loop error: {e}")
+            
+            # Ngủ từ 4 đến 6 tiếng
+            sleep_duration = random.randint(14400, 21600)
+            logger.info(f"[{client.name}] Scanner sleeping for {sleep_duration/3600:.1f} hours...")
             await asyncio.sleep(sleep_duration)
 
     # Start scanner for each client

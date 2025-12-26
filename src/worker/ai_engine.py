@@ -1,6 +1,9 @@
 import google.generativeai as genai
 import PIL.Image
 import json
+import logging
+from datetime import datetime
+import pytz # Cần pip install pytz
 from src.common.config import settings
 from src.common.logger import logger
 from src.common.template_registry import get_template_config
@@ -21,34 +24,62 @@ class AIEngine:
             self.model = None
 
     async def generate_structured_report(self, messages: list, template_code: str) -> dict:
+        """
+        Tạo báo cáo có cấu trúc (JSON) cho Visualizer.
+        Tích hợp: Time Context + Strict JSON enforcement.
+        """
         if not self.model:
             return None
             
         config = get_template_config(template_code)
         
-        # 1. Context từ tin nhắn
-        context_text = "\n---\n".join(messages[:30])
+        # 1. Lấy thời gian thực (Việt Nam)
+        vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+        now_str = datetime.now(vn_tz).strftime("%Y-%m-%d %H:%M:%S")
         
-        # 2. Dynamic Prompt từ Config
+        # 2. Context từ tin nhắn
+        # Giới hạn context window để tránh quá tải token, lấy 50 tin mới nhất
+        context_text = "\n---\n".join(messages[:50])
+        
+        # 3. Dynamic Prompt (Đã nâng cấp với Time Context & Anti-Hallucination)
         system_prompt = f"""
         {config['ai_prompt']}
         
-        Dữ liệu đầu vào:
-        {context_text}
+        --- BỐI CẢNH THỜI GIAN THỰC (QUAN TRỌNG) ---
+        🕒 THỜI GIAN HIỆN TẠI (VN): {now_str}
         
-        YÊU CẦU BẮT BUỘC:
-        1. Trả về JSON hợp lệ (không markdown, không code block).
-        2. Nếu không có dữ liệu cụ thể, để null hoặc "N/A".
-        3. Field "metrics" là một Dictionary chứa các chỉ số quan trọng nhất (Key-Value) để hiển thị lên ảnh. 
-           Ví dụ: {{"Risk": "High", "Volume": "50M"}} hoặc {{"Shill Groups": "5", "Entry": "$0.5"}}
-           AI hãy tự chọn 3-4 chỉ số quan trọng nhất dựa trên ngữ cảnh.
+        LUẬT BẮT BUỘC:
+        1. KIỂM TRA THỜI GIAN: So sánh thời gian trong tin nhắn với "THỜI GIAN HIỆN TẠI". 
+           - Nếu tin nhắn nói "hôm qua" hoặc quá 24h, hãy coi là tin cũ (trừ khi là phân tích vĩ mô).
+           - Ưu tiên tin nhắn mới nhất.
+        2. CHỐNG BỊA ĐẶT (HALLUCINATION): 
+           - Chỉ trích xuất con số (Giá, Volume) có trong văn bản. KHÔNG ĐƯỢC ĐOÁN.
+           - Nếu không có dữ liệu, trả về "N/A" hoặc null.
+        3. OUTPUT JSON THUẦN: 
+           - Trả về JSON hợp lệ. Không dùng Markdown (```json). Không giải thích thêm.
+           - Field "metrics" phải luôn tồn tại (dù rỗng).
+        
+        Dữ liệu đầu vào (Tin nhắn Telegram):
+        {context_text}
         """
 
         try:
-            response = await self.model.generate_content_async(system_prompt)
+            # Tăng temperature lên một chút (0.4) để AI linh hoạt hơn trong việc tóm tắt, 
+            # nhưng vẫn đủ thấp để giữ cấu trúc JSON.
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.4,
+                response_mime_type="application/json" # Ép Gemini trả về JSON Mode (tính năng mới)
+            )
+
+            response = await self.model.generate_content_async(
+                system_prompt, 
+                generation_config=generation_config
+            )
+            
             raw_text = response.text.strip()
             
-            # Clean up markdown code blocks
+            # --- Robust JSON Parsing ---
+            # Xử lý trường hợp AI vẫn cố tình trả về Markdown code block
             if raw_text.startswith("```json"):
                 raw_text = raw_text[7:]
             if raw_text.startswith("```"):
@@ -58,22 +89,30 @@ class AIEngine:
                 
             data = json.loads(raw_text.strip())
             
-            # Đảm bảo luôn có field này để Visualizer không lỗi
+            # Đảm bảo cấu trúc dữ liệu cho Visualizer
             if "metrics" not in data: 
                 data["metrics"] = {}
-                
+            
+            # Tự động tính toán/điền các field bị thiếu để Visualizer không lỗi
+            if "score" not in data:
+                data["score"] = 50 # Default neutral
+            if "summary" not in data:
+                data["summary"] = "Không đủ dữ liệu để tóm tắt."
+
             return data
             
+        except json.JSONDecodeError as e:
+            logger.error(f"AI JSON Decode Error for {template_code}: {e} | Raw: {raw_text[:100]}...")
+            return None
         except Exception as e:
             logger.error(f"AI Error for {template_code}: {e}")
             return None
 
     async def generate_text(self, prompt: str) -> str:
         """
-        Generic method to generate text from prompt.
+        Generic method to generate text (dùng cho các task phụ).
         """
-        if not self.model:
-            return ""
+        if not self.model: return ""
         try:
             response = await self.model.generate_content_async(prompt)
             return response.text.strip()
@@ -82,53 +121,32 @@ class AIEngine:
             return ""
 
     async def analyze_message(self, message_text: str, plan_type: str = "VIP") -> str:
-        if not self.model:
-            return "AI Analysis Unavailable (Missing Key)"
+        """
+        Phân tích nhanh 1 tin nhắn lẻ (Dùng cho Bot chat trực tiếp).
+        """
+        if not self.model: return "AI Analysis Unavailable"
 
         if plan_type == "BUSINESS":
             prompt = f"""
-            Bạn là một chuyên gia phân tích thị trường Crypto (Alpha Hunter) cao cấp.
-            Hãy phân tích tin nhắn sau một cách chi tiết, tập trung vào xu hướng, tâm lý và dòng tiền.
+            Bạn là chuyên gia Crypto Alpha Hunter. Phân tích tin nhắn sau:
+            "{message_text}"
             
-            Tin nhắn:
-            {message_text}
-            
-            Yêu cầu đầu ra (Format Telegram, không dùng code block):
-            
-            📌 **Tóm tắt**: [Nội dung chính]
-            
-            📊 **Phân tích**: [Đánh giá setup, rủi ro, tiềm năng]
-            
-            🧠 **Tâm lý & Onchain**: [Phân tích tâm lý đám đông, dòng tiền, hành động cá mập]
-            
-            🎯 **Vùng giá quan tâm**: [Entry/TP nếu có, không đưa ra SL cụ thể]
-            
-            ⭐ **Đánh giá**: [Thang điểm 1-10]
-            
-            💡 **Chiến lược**: [Ngắn hạn/Dài hạn, Quản lý vốn]
-            
-            _⚠️ Nhận định được hỗ trợ bởi AI, chỉ mang tính tham khảo. Không phải lời khuyên đầu tư._
-            
-            Lưu ý: 
-            - Không dùng header "AI Analysis".
-            - Trình bày thoáng, dễ đọc.
-            - Ngắn gọn, súc tích.
+            Output Format Telegram:
+            📌 **Tóm tắt**: ...
+            📊 **Phân tích**: ...
+            🎯 **Vùng giá**: Entry/TP (nếu có)
+            ⭐ **Điểm**: 1-10
+            💡 **Chiến lược**: ...
             """
         else:
-            # VIP (Basic)
             prompt = f"""
-            Bạn là một chuyên gia phân tích tín hiệu Crypto (Alpha Hunter).
-            Hãy phân tích tin nhắn sau và đưa ra đánh giá ngắn gọn (tối đa 5 dòng).
+            Phân tích tin nhắn Crypto sau ngắn gọn:
+            "{message_text}"
             
-            Tin nhắn:
-            {message_text}
-            
-            Yêu cầu đầu ra:
-            - Tóm tắt: [Nội dung chính]
-            - Đánh giá: [Thang điểm 1-10]
-            - Hành động: [Mua/Bán/Quan sát]
-            
-            Nếu tin nhắn là spam hoặc không phải tín hiệu, hãy trả về "Spam/Irrelevant".
+            Output:
+            - Tóm tắt: ...
+            - Đánh giá: 1-10
+            - Hành động: Mua/Bán/Quan sát
             """
 
         try:
@@ -139,12 +157,13 @@ class AIEngine:
             return "AI Analysis Failed"
 
     async def extract_text_from_image(self, image_path: str) -> str:
-        if not self.model:
-            return ""
-        
+        """
+        OCR ảnh chart/kèo (Dùng cho Ingestor).
+        """
+        if not self.model: return ""
         try:
             img = PIL.Image.open(image_path)
-            prompt = "Extract all text from this image. If it contains a chart or signal, describe the key details (Token, Entry, TP, SL)."
+            prompt = "Extract details: Token, Entry, TP, SL, Direction (Long/Short). Return just text."
             response = await self.model.generate_content_async([prompt, img])
             return response.text.strip()
         except Exception as e:

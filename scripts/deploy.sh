@@ -1,111 +1,138 @@
 #!/bin/bash
 
-# Deploy Script for SanKeo Project
-# Usage: ./scripts/deploy.sh
+# ==========================================
+# 🚀 SAN KEO BOT - VPS DEPLOYMENT SCRIPT
+# ==========================================
+# Usage: 
+#   ./scripts/deploy.sh        (Full Deploy)
+#   ./scripts/deploy.sh --quick (Skip system updates)
 
-set -e
+set -e # Exit immediately if a command exits with a non-zero status.
 
-echo "🚀 Starting Deployment..."
+# --- CONFIGURATION ---
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV_DIR="$PROJECT_DIR/venv"
+LOG_FILE="$PROJECT_DIR/logs/deploy.log"
 
-# 1. Pull latest code
-echo "📥 Pulling latest code from Git..."
-# Stash any local changes (like config files) to avoid conflicts
-git stash
-git pull origin main
-# Restore local changes
-git stash pop || echo "⚠️ No local changes to restore or conflict occurred."
+# Ensure logs directory exists
+mkdir -p "$PROJECT_DIR/logs"
 
-# 2. System Dependencies
-echo "🛠️ Checking system dependencies..."
-if ! command -v npm &> /dev/null; then
-    echo "⚠️ Node.js/npm not found! Installing..."
-    sudo apt update
-    sudo apt install -y nodejs npm
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+error() {
+    echo "❌ [ERROR] $1" | tee -a "$LOG_FILE"
+    exit 1
+}
+
+log "🚀 Starting Deployment in $PROJECT_DIR..."
+
+# --- 1. GIT UPDATE ---
+log "📥 Pulling latest code..."
+cd "$PROJECT_DIR"
+
+# Check for local changes
+if [[ -n $(git status -s) ]]; then
+    log "⚠️ Local changes detected. Stashing..."
+    git stash save "Auto-stash before deploy $(date)"
 fi
 
-# 3. Activate Virtual Environment
-echo "🔌 Activating Virtual Environment..."
-# Ensure we are in the project root
-cd "$(dirname "$0")/.."
+git pull origin main || error "Git pull failed!"
 
-if [ ! -f "venv/bin/activate" ]; then
-    echo "⚠️ venv missing or broken! Creating one..."
-    rm -rf venv
-    # Try standard creation
-    if ! python3 -m venv venv; then
-        echo "⚠️ Failed to create venv. Installing python3-venv..."
-        sudo apt update
-        sudo apt install -y python3-venv python3-full
-        # Retry
-        python3 -m venv venv
+# --- 2. SYSTEM DEPENDENCIES (Optional with --quick) ---
+if [[ "$1" != "--quick" ]]; then
+    log "🛠️ Checking system dependencies..."
+    
+    # Node.js & PM2
+    if ! command -v npm &> /dev/null; then
+        log "Installing Node.js..."
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+        sudo apt-get install -y nodejs
     fi
+
+    if ! command -v pm2 &> /dev/null; then
+        log "Installing PM2..."
+        sudo npm install -g pm2
+    fi
+
+    # Redis
+    if ! command -v redis-server &> /dev/null; then
+        log "Installing Redis..."
+        sudo apt-get update
+        sudo apt-get install -y redis-server
+        sudo systemctl enable redis-server
+        sudo systemctl start redis-server
+    fi
+
+    # Python Venv
+    if ! dpkg -s python3-venv &> /dev/null; then
+        log "Installing python3-venv..."
+        sudo apt-get install -y python3-venv python3-full
+    fi
+else
+    log "⏩ Skipping system updates (--quick mode)"
 fi
 
-# Activate venv
-source ./venv/bin/activate || { echo "❌ Failed to activate venv"; exit 1; }
+# --- 3. PYTHON ENVIRONMENT ---
+log "🔌 Setting up Python Environment..."
 
-# Load environment variables
-if [ -f .env ]; then
-    echo "🌍 Loading environment variables..."
-    set -a
-    source .env
-    set +a
+if [ ! -d "$VENV_DIR" ]; then
+    log "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
 fi
 
-# 4. Install Dependencies
-echo "📦 Installing dependencies..."
+# Activate Venv
+source "$VENV_DIR/bin/activate" || error "Failed to activate venv"
 
-# Check and install Redis if missing
-if ! command -v redis-server &> /dev/null; then
-    echo "⚠️ Redis not found! Installing..."
-    sudo apt update
-    sudo apt install -y redis-server
-    sudo systemctl enable redis-server
-    sudo systemctl start redis-server
-fi
-
-# Upgrade pip first
+# Upgrade pip
 pip install --upgrade pip
-pip install -r requirements.txt
-# Explicitly install uvicorn to ensure it's available for PM2
-pip install uvicorn[standard]
 
-# 6. Directory Setup
-echo "📂 Ensuring directories exist..."
+# Install Requirements
+log "📦 Installing Python dependencies..."
+pip install -r requirements.txt || error "Failed to install requirements"
+
+# --- 4. DIRECTORY SETUP ---
+log "📂 Creating necessary directories..."
 mkdir -p sessions logs temp_images
 
-# 7. Database Setup & Migrations
-echo "🗄️ Setting up Database..."
+# --- 5. DATABASE & MIGRATIONS ---
+log "🗄️ Database Operations..."
+export PYTHONPATH=$PROJECT_DIR
 
-# Initialize DB (Create tables if not exist)
-python3 init_db.py
+# Init DB
+python3 init_db.py || error "Failed to init DB"
 
-# Run Migrations (CRITICAL: Run BEFORE seeding to ensure schema is correct)
-echo "🔄 Running Migrations..."
+# Run Migrations
+log "🔄 Running Migrations..."
+# Add any new migration scripts here
 python3 -m scripts.migrate_affiliate || true
 python3 -m scripts.migrate_quiet_blacklist || true
 python3 -m scripts.migrate_business_plan || true
 python3 -m scripts.migrate_source_config || true
 
-# Run Seeds (Idempotent)
-echo "🌱 Seeding Data..."
-python3 -m scripts.seed_templates
-python3 -m scripts.seed_data
+# Seed Data
+log "🌱 Seeding Data..."
+python3 -m scripts.seed_templates || error "Failed to seed templates"
+python3 -m scripts.seed_data || log "Seed data might already exist or failed non-critically"
 
-# 8. PM2 Reload
-echo "🔄 Reloading PM2 processes..."
-if ! command -v pm2 &> /dev/null; then
-    echo "⚠️ PM2 not found! Installing globally..."
-    sudo npm install -g pm2
+# --- 6. PM2 PROCESS MANAGEMENT ---
+log "🔄 Reloading PM2..."
+
+# Check if ecosystem file exists
+if [ ! -f "ecosystem.config.js" ]; then
+    error "ecosystem.config.js not found!"
 fi
 
-# Start/Reload ecosystem
-pm2 startOrReload ecosystem.config.js --update-env
+# Start or Reload
+pm2 startOrReload ecosystem.config.js --update-env || error "PM2 failed"
 pm2 save
 
-# Setup PM2 Startup (if not already done)
-# Note: This command might need to be run manually once on the server to get the correct command
-# pm2 startup
+# --- 7. CLEANUP ---
+log "🧹 Cleaning up temp files..."
+# Optional: Clear old temp images > 24h
+find temp_images -name "*.jpg" -type f -mtime +1 -delete
+find temp_images -name "*.png" -type f -mtime +1 -delete
 
-echo "✅ Deployment Complete!"
+log "✅ DEPLOYMENT COMPLETE!"
 pm2 status

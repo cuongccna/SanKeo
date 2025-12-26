@@ -3,11 +3,12 @@ import json
 import logging
 import os
 import random
-from typing import Set, List
+from typing import Set
 
 from pyrogram import Client
 from pyrogram.errors import FloodWait, UserAlreadyParticipant
 from pyrogram.raw import functions
+from pyrogram.raw.types import Channel, Chat
 
 logger = logging.getLogger("SniperScanner")
 
@@ -16,59 +17,70 @@ KEYWORDS = ['Crypto','đầu tư', 'chứng khoán', 'crypto chat', 'tín hiệu
 
 MIN_MEMBERS = 500
 MAX_MEMBERS = 1000000
-MAX_JOINS_PER_RUN = 3 # Low limit to avoid spamming while running in background
+MAX_JOINS_PER_RUN = 3
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HISTORY_FILE = os.path.join(BASE_DIR, "scanned_history.json")
 
+# --- GLOBAL LOCK CHO FILE I/O ---
+file_lock = asyncio.Lock()
+
 class HistoryManager:
     def __init__(self, filepath: str):
         self.filepath = filepath
-        self.scanned_ids: Set[int] = self._load_history()
+        self.scanned_ids: Set[int] = set()
 
-    def _load_history(self) -> Set[int]:
+    async def load(self):
+        """Load async để tránh chặn luồng chính"""
         if not os.path.exists(self.filepath):
-            return set()
-        try:
-            with open(self.filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return set(data.get("scanned_ids", []))
-        except Exception as e:
-            logger.error(f"Failed to load history: {e}")
-            return set()
+            return
+        async with file_lock:
+            try:
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.scanned_ids = set(data.get("scanned_ids", []))
+            except Exception as e:
+                logger.error(f"Failed to load history: {e}")
 
-    def add(self, chat_id: int):
+    async def add(self, chat_id: int):
         self.scanned_ids.add(chat_id)
-        self._save_history()
+        await self._save()
     
     def exists(self, chat_id: int) -> bool:
         return chat_id in self.scanned_ids
 
-    def _save_history(self):
-        try:
-            with open(self.filepath, 'w', encoding='utf-8') as f:
-                json.dump({"scanned_ids": list(self.scanned_ids)}, f, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to save history: {e}")
+    async def _save(self):
+        async with file_lock:
+            try:
+                with open(self.filepath, 'w', encoding='utf-8') as f:
+                    json.dump({"scanned_ids": list(self.scanned_ids)}, f, indent=2)
+            except Exception as e:
+                logger.error(f"Failed to save history: {e}")
+
+# Khởi tạo Global History Manager
+history_manager = HistoryManager(HISTORY_FILE)
 
 async def run_scanner_cycle(client: Client):
     """Runs one cycle of scanning and joining."""
+    # Đảm bảo history đã load
+    if not history_manager.scanned_ids:
+        await history_manager.load()
+
     logger.info(f"[{client.name}] Starting scanner cycle...")
-    history = HistoryManager(HISTORY_FILE)
     joins_count = 0
     
-    # Shuffle keywords
     current_keywords = list(KEYWORDS)
     random.shuffle(current_keywords)
 
-    for keyword in current_keywords:
+    # Chỉ scan tối đa 5 từ khóa mỗi lần chạy để tránh spam search API
+    for keyword in current_keywords[:5]: 
         if joins_count >= MAX_JOINS_PER_RUN:
-            logger.info("Reached MAX_JOINS_PER_RUN. Stopping scanner cycle.")
             break
 
-        logger.info(f"🔎 Searching for keyword: '{keyword}'")
+        logger.info(f"🔎 Searching: '{keyword}'")
         
         try:
+            # Gọi API Search
             results = await client.invoke(
                 functions.contacts.Search(
                     q=keyword,
@@ -77,68 +89,85 @@ async def run_scanner_cycle(client: Client):
             )
             
             if not results.chats:
+                await asyncio.sleep(random.uniform(5, 10)) # Nghỉ giữa các keywords
                 continue
 
             for chat_raw in results.chats:
                 if joins_count >= MAX_JOINS_PER_RUN:
                     break
 
+                # Lấy ID và check History
                 chat_id = chat_raw.id
-                username = getattr(chat_raw, 'username', None)
-                title = getattr(chat_raw, 'title', 'Unknown')
+                # Telegram raw ID thường dương, nhưng pyrogram dùng ID âm (-100...) cho channel/group
+                # Chúng ta sẽ lưu raw ID để đơn giản hóa việc check
                 
-                is_broadcast = getattr(chat_raw, 'broadcast', False)
-                if is_broadcast:
-                    logger.info(f"Skipping {title}: Broadcast Channel")
+                if history_manager.exists(chat_id):
+                    continue
+                
+                # Đánh dấu đã scan để lần sau không check lại (dù join hay không)
+                await history_manager.add(chat_id)
+
+                title = getattr(chat_raw, 'title', 'Unknown')
+                username = getattr(chat_raw, 'username', None)
+
+                # Filter: Chỉ lấy Channel hoặc Chat (Group)
+                if not isinstance(chat_raw, (Channel, Chat)):
                     continue
 
-                if history.exists(chat_id):
-                    logger.info(f"Skipping {title}: Already scanned")
+                # Filter: Bỏ qua Broadcast Channels (Chỉ join Group/Supergroup)
+                # Channel object có thuộc tính 'broadcast' = True nếu là kênh thông báo
+                if isinstance(chat_raw, Channel) and getattr(chat_raw, 'broadcast', False):
                     continue
-                
-                history.add(chat_id)
 
                 if not username:
-                    logger.info(f"Skipping {title}: No username")
                     continue
 
-                try:
-                    full_chat = await client.get_chat(username)
-                    member_count = full_chat.members_count
-                    
-                    if not (MIN_MEMBERS <= member_count <= MAX_MEMBERS):
-                        logger.info(f"Skipping {title}: Members {member_count} not in range")
-                        continue
+                # === TỐI ƯU HÓA: KHÔNG GỌI client.get_chat() ===
+                # Dữ liệu participants_count thường có sẵn trong kết quả search
+                member_count = getattr(chat_raw, 'participants_count', 0)
+                
+                # Nếu member_count = 0 (do API không trả về), lúc này mới cực chẳng đã gọi get_chat
+                # Hoặc chấp nhận bỏ qua để an toàn
+                if member_count == 0:
+                     # logger.debug(f"Skipping {title}: No member count info")
+                     # continue
+                     pass # Có thể bỏ qua check này nếu muốn mạo hiểm hơn
 
-                    logger.info(f"🚀 Attempting to join: {title} (@{username})")
+                if member_count > 0 and not (MIN_MEMBERS <= member_count <= MAX_MEMBERS):
+                    continue
+
+                logger.info(f"🚀 Attempting join: {title} (@{username}) - {member_count} mems")
+                
+                try:
                     await client.join_chat(username)
                     
-                    # Post-join check
+                    # Check quyền gửi tin nhắn sau khi join
+                    # Lúc này mới cần gọi get_chat vì đã là member
                     joined_chat = await client.get_chat(username)
-                    permissions = joined_chat.permissions
-                    can_send = True
-                    if permissions:
-                        can_send = permissions.can_send_messages
-
+                    
+                    can_send = joined_chat.permissions.can_send_messages if joined_chat.permissions else True
+                    
                     if not can_send:
-                        logger.warning(f"❌ Joined {title} but CANNOT send messages. Leaving...")
+                        logger.warning(f"❌ Joined {title} but READ-ONLY. Leaving...")
                         await client.leave_chat(joined_chat.id)
                     else:
-                        logger.info(f"✅ Successfully joined: {title}")
+                        logger.info(f"✅ JOINED SUCCESS: {title}")
                         joins_count += 1
-                        await asyncio.sleep(random.randint(30, 60))
+                        # Nghỉ dài sau khi join thành công
+                        await asyncio.sleep(random.randint(45, 90))
 
                 except FloodWait as e:
-                    logger.warning(f"FloodWait: {e.value}s")
-                    await asyncio.sleep(e.value)
+                    logger.warning(f"FloodWait: {e.value}s. Stopping cycle.")
+                    return # Dừng luôn cycle này nếu dính floodwait
                 except UserAlreadyParticipant:
-                    pass
+                    logger.info(f"Already in {title}")
                 except Exception as e:
-                    logger.error(f"Error joining {title}: {e}")
+                    logger.error(f"Join error {title}: {e}")
 
         except Exception as e:
             logger.error(f"Search error: {e}")
         
-        await asyncio.sleep(5)
+        # Nghỉ giữa các lần search keyword
+        await asyncio.sleep(random.uniform(10, 20))
 
-    logger.info(f"[{client.name}] Scanner cycle finished. Joined {joins_count} groups.")
+    logger.info(f"[{client.name}] Cycle finished. Joined {joins_count}.")
