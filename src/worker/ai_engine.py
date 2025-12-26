@@ -89,6 +89,13 @@ class AIEngine:
                 
             data = json.loads(raw_text.strip())
             
+            # Handle case where AI returns a list instead of a dict
+            if isinstance(data, list):
+                if len(data) > 0 and isinstance(data[0], dict):
+                    data = data[0]
+                else:
+                    data = {"summary": str(data), "metrics": {}}
+
             # Đảm bảo cấu trúc dữ liệu cho Visualizer
             if "metrics" not in data: 
                 data["metrics"] = {}
