@@ -216,18 +216,18 @@ class ReportVisualizer:
         theme_color = config.get("theme_color", self.COLOR_ACCENT)
         draw.rectangle([(0, 0), (W, 15)], fill=theme_color)
         
-        # Tiêu đề Template (Tiếng Việt từ Config)
+        # Badge Logo/Bot Name - Move to Top Right, Higher up to avoid collision
+        draw.text((W - 350, 30), "SAN KEO BOT AI", fill=self.COLOR_ACCENT, font=self.font_header)
+
+        # Tiêu đề Template (Tiếng Việt từ Config) - Move down slightly
         title_vi = config.get("name_vi", config['name']).upper()
-        draw.text((50, 60), title_vi, fill=self.COLOR_TEXT_MAIN, font=self.font_title)
+        draw.text((50, 80), title_vi, fill=self.COLOR_TEXT_MAIN, font=self.font_title)
         
         # Ngày giờ
         time_str = datetime.now().strftime("NGÀY %d/%m/%Y | %H:%M")
-        draw.text((50, 140), time_str, fill=self.COLOR_TEXT_SUB, font=self.font_small)
-        
-        # Badge Logo/Bot Name góc phải
-        draw.text((W - 250, 70), "SAN KEO BOT AI", fill=self.COLOR_ACCENT, font=self.font_header)
+        draw.text((50, 160), time_str, fill=self.COLOR_TEXT_SUB, font=self.font_small)
 
-        current_y = 200
+        current_y = 220 # Push content down
         content_width = W - 100 # Margin left/right 50px
 
         # --- SECTION 1: METRICS (THÔNG SỐ) ---
@@ -249,8 +249,9 @@ class ReportVisualizer:
             
             # Nếu có Sentiment Score, vẽ thanh bar
             if "score" in data:
-                self._draw_sentiment_bar(draw, inner_x, inner_y + 10, content_width - 40, int(data['score']))
-                grid_start_y = inner_y + 60
+                # Move bar down to avoid label overlapping header
+                self._draw_sentiment_bar(draw, inner_x, inner_y + 35, content_width - 40, int(data['score']))
+                grid_start_y = inner_y + 90
             else:
                 grid_start_y = inner_y + 10
                 
