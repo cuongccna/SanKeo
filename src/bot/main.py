@@ -9,7 +9,7 @@ import json
 import random
 import re
 from urllib.parse import quote
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
 from aiogram.filters import Command, CommandStart, CommandObject
@@ -1051,7 +1051,7 @@ async def subscription_monitor():
                 )
                 users = result.scalars().all()
                 
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 
                 for user in users:
                     if not user.expiry_date:

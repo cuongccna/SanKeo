@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Router, types, F
 from aiogram.filters import Command, CommandObject
@@ -71,7 +71,7 @@ async def cmd_gift(message: types.Message, command: CommandObject):
             await message.answer("❌ User không tồn tại trong hệ thống.")
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if user.plan_type == PlanType.VIP and user.expiry_date and user.expiry_date > now:
             user.expiry_date += timedelta(days=days)
         else:

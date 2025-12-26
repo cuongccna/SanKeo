@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.database.db import AsyncSessionLocal
 from src.database.models import User, PlanType
 from src.common.config import settings
@@ -17,7 +17,7 @@ async def set_vip(user_id: int):
         user = result.scalar_one_or_none()
         
         # Default 30 days
-        expiry = datetime.utcnow() + timedelta(days=30)
+        expiry = datetime.now(timezone.utc) + timedelta(days=30)
 
         if user:
             user.plan_type = PlanType.VIP
