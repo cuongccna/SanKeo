@@ -113,7 +113,16 @@ class ReportVisualizer:
         
         # Text label
         label = "SỢ HÃI" if score < 40 else ("HƯNG PHẤN" if score > 60 else "TRUNG LẬP")
-        draw.text((x + width - 100, y - 30), f"{score}/100 {label}", fill=fill_color, font=self.font_small)
+        # Fix: Align right properly
+        label_text = f"{score}/100 {label}"
+        # Use textbbox to calculate width if available (Pillow >= 9.2.0)
+        try:
+            bbox = draw.textbbox((0, 0), label_text, font=self.font_small)
+            text_w = bbox[2] - bbox[0]
+        except:
+            text_w = len(label_text) * 10 # Fallback estimation
+            
+        draw.text((x + width - text_w, y - 30), label_text, fill=fill_color, font=self.font_small)
 
     def _get_trend_color(self, text):
         """Logic xác định màu dựa trên text (Tiếng Việt & Anh)"""
@@ -124,10 +133,56 @@ class ReportVisualizer:
             return self.COLOR_BEAR
         return self.COLOR_TEXT_MAIN
 
+    def _draw_text_fit(self, draw, text, x, y, max_width, font, fill):
+        """Draw text that fits within max_width by scaling down font size or wrapping"""
+        text = str(text)
+        current_font = font
+        
+        # Try to fit by reducing font size first
+        min_size = 20
+        try:
+            # Get current size from font object if possible, else assume default
+            current_size = font.size 
+        except:
+            current_size = self.SIZE_METRIC_VAL
+
+        while current_size >= min_size:
+            try:
+                bbox = draw.textbbox((0, 0), text, font=current_font)
+                w = bbox[2] - bbox[0]
+            except:
+                w = len(text) * (current_size * 0.6) # Rough estimate
+            
+            if w <= max_width:
+                draw.text((x, y), text, fill=fill, font=current_font)
+                return
+            
+            current_size -= 2
+            try:
+                # Reload font with smaller size
+                # Note: This requires knowing the font path, which is tricky here.
+                # So we might just use the default font loading logic or pre-load sizes.
+                # For simplicity, let's just wrap if it's too big for the standard font.
+                break 
+            except:
+                break
+        
+        # If still too big, wrap it
+        # Use a smaller font for wrapped text
+        wrap_font = self.font_body
+        avg_char_width = 15 # Estimate
+        chars_per_line = max(10, int(max_width / avg_char_width))
+        lines = textwrap.wrap(text, width=chars_per_line)
+        
+        current_y = y
+        for line in lines:
+            draw.text((x, current_y), line, fill=fill, font=wrap_font)
+            current_y += 30
+
     def _draw_metrics_grid(self, draw, start_x, start_y, width, metrics):
         """Vẽ lưới thông số kỹ thuật (2 cột)"""
         col_w = (width - 40) // 2
-        row_h = 80
+        row_h = 100 # Increased height to accommodate wrapping
         
         items = list(metrics.items())
         for i, (k, v) in enumerate(items):
@@ -142,7 +197,9 @@ class ReportVisualizer:
             
             # Value (Lớn, có màu theo ngữ nghĩa)
             val_color = self._get_trend_color(v)
-            draw.text((x, y + 28), str(v), fill=val_color, font=self.font_metric_val)
+            
+            # Use smart fit drawing
+            self._draw_text_fit(draw, v, x, y + 28, col_w, self.font_metric_val, val_color)
             
         return start_y + ((len(items) + 1) // 2 * (row_h + 15))
 
@@ -179,8 +236,13 @@ class ReportVisualizer:
              metrics["Tài sản"] = ", ".join(data["top_assets"])
         
         if metrics:
+            # Calculate dynamic height for metrics card
+            # Base height + rows * row_height
+            row_count = (len(metrics) + 1) // 2
+            metrics_height = 80 + (row_count * 115) # 100 row_h + 15 gap
+            
             # Vẽ khung Metrics
-            inner_x, inner_y = self._draw_glass_card(img, 50, current_y, content_width, 350, "THÔNG SỐ KỸ THUẬT")
+            inner_x, inner_y = self._draw_glass_card(img, 50, current_y, content_width, metrics_height, "THÔNG SỐ KỸ THUẬT")
             
             # Vẽ lại draw object vì img đã bị thay đổi bởi alpha_composite
             draw = ImageDraw.Draw(img)
@@ -193,7 +255,7 @@ class ReportVisualizer:
                 grid_start_y = inner_y + 10
                 
             self._draw_metrics_grid(draw, inner_x, grid_start_y, content_width - 40, metrics)
-            current_y += 380 # Chiều cao card + margin
+            current_y += metrics_height + 30 # Chiều cao card + margin
 
         # --- SECTION 2: AI ANALYSIS (PHÂN TÍCH) ---
         summary = data.get("summary", data.get("action_summary", ""))
