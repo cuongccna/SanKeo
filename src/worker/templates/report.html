@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>{{ css | safe }}</style>
+    <style>
+        /* Dynamic Theme Color */
+        :root {
+            --theme-color: {{ theme_color | safe }};
+        }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <!-- Accent Bar -->
+        <div class="accent-bar" style="background: {{ theme_color }};"></div>
+        
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>{{ title }}</h1>
+                <div class="timestamp">NGÀY {{ timestamp }}</div>
+            </div>
+            <div class="header-right">
+                <div class="brand">SAN KEO BOT AI</div>
+            </div>
+        </div>
+        
+        <!-- Metrics Card -->
+        {% if metrics %}
+        <div class="glass-card">
+            <div class="card-header">
+                <h3>THÔNG SỐ KỸ THUẬT</h3>
+                {% if score %}
+                <span class="score-badge {{ score_class }}">{{ score }}/100 {{ score_label }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if score %}
+                <div class="sentiment-bar-container">
+                    <div class="sentiment-bar">
+                        <div class="fill {{ score_class }}" style="width: {{ score }}%;"></div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="metrics-grid">
+                    {% for key, value in metrics.items() %}
+                    <div class="metric-item">
+                        <div class="label">{{ key }}</div>
+                        <div class="value {{ value | trend_class }}">{{ value }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Summary Card -->
+        {% if summary %}
+        <div class="glass-card">
+            <div class="card-header">
+                <h3>NHẬN ĐỊNH CỦA AI</h3>
+            </div>
+            <div class="card-body">
+                <div class="summary-text">{{ summary }}</div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Steps Card -->
+        {% if steps %}
+        <div class="glass-card">
+            <div class="card-header">
+                <h3>HÀNH ĐỘNG KHUYẾN NGHỊ</h3>
+            </div>
+            <div class="card-body">
+                <ul class="steps-list">
+                    {% for step in steps %}
+                    <li>
+                        <span class="step-number">{{ loop.index }}</span>
+                        <span class="step-text">{{ step }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Footer -->
+        <div class="footer">
+            <span class="warning-icon">⚠️</span>
+            <span class="warning-text">Cảnh báo: Thị trường Crypto có rủi ro cao. DYOR.</span>
+        </div>
+    </div>
+</body>
+</html>

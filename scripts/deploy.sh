@@ -92,6 +92,10 @@ pip install --upgrade pip
 log "📦 Installing Python dependencies..."
 pip install -r requirements.txt || error "Failed to install requirements"
 
+# Install Playwright browsers
+log "🎭 Installing Playwright Chromium..."
+python3 -m playwright install chromium || log "Playwright already installed or failed (non-critical)"
+
 # --- 4. DIRECTORY SETUP ---
 log "📂 Creating necessary directories..."
 mkdir -p sessions logs temp_images

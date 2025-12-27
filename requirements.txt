@@ -23,4 +23,6 @@ uvicorn[standard]
 google-generativeai
 Pillow
 tabulate
+playwright
+jinja2
 pytz
