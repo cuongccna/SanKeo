@@ -206,21 +206,23 @@ async def main():
     """Main function"""
     logger.info("🚀 Starting source seeding...")
     
-    # Get session file - use 84389961241 with proxy
-    session_path = os.path.join(os.getcwd(), "sessions", "84389961241")
+    # Always use 84389961241 session with proxy for safety
+    session_name = "84389961241"
+    
+    session_path = os.path.join(os.getcwd(), "sessions", session_name)
     
     if not os.path.exists(f"{session_path}.session"):
-        logger.error("❌ Session file not found!")
+        logger.error(f"❌ Session file not found: {session_path}.session")
         return
     
-    # Load proxy config
+    # Load proxy config - always use proxy for 84389961241
     proxy = None
     proxies_file = os.path.join(os.getcwd(), "proxies.json")
     if os.path.exists(proxies_file):
         with open(proxies_file, 'r') as f:
             proxies = json.load(f)
-            if "84389961241" in proxies:
-                p = proxies["84389961241"]
+            if session_name in proxies:
+                p = proxies[session_name]
                 proxy = (
                     socks.SOCKS5,
                     p["hostname"],
@@ -230,6 +232,8 @@ async def main():
                     p["password"]
                 )
                 logger.info(f"🔐 Using proxy: {p['hostname']}:{p['port']}")
+    
+    logger.info(f"📱 Using session: {session_name}")
     
     # Create Telethon client with proxy
     client = TelegramClient(
