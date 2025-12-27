@@ -206,8 +206,15 @@ async def main():
     """Main function"""
     logger.info("🚀 Starting source seeding...")
     
-    # Always use 84389961241 session with proxy for safety
-    session_name = "84389961241"
+    # Detect environment
+    is_windows = os.name == 'nt'
+    
+    if is_windows:
+        # Windows: use 84389961241 with proxy
+        session_name = "84389961241"
+    else:
+        # Linux VPS: use ingestor_session (84389961241 is corrupted on VPS)
+        session_name = "ingestor_session"
     
     session_path = os.path.join(os.getcwd(), "sessions", session_name)
     
@@ -215,14 +222,15 @@ async def main():
         logger.error(f"❌ Session file not found: {session_path}.session")
         return
     
-    # Load proxy config - always use proxy for 84389961241
+    # Load proxy config (only for Windows with 84389961241)
     proxy = None
-    proxies_file = os.path.join(os.getcwd(), "proxies.json")
-    if os.path.exists(proxies_file):
-        with open(proxies_file, 'r') as f:
-            proxies = json.load(f)
-            if session_name in proxies:
-                p = proxies[session_name]
+    if is_windows:
+        proxies_file = os.path.join(os.getcwd(), "proxies.json")
+        if os.path.exists(proxies_file):
+            with open(proxies_file, 'r') as f:
+                proxies = json.load(f)
+                if session_name in proxies:
+                    p = proxies[session_name]
                 proxy = (
                     socks.SOCKS5,
                     p["hostname"],

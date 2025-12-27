@@ -531,31 +531,40 @@ async def main():
     logger.info("🚀 Starting FULL source seeding...")
     logger.info("=" * 60)
     
-    # Always use 84389961241 session with proxy
-    session_name = "84389961241"
+    # Detect environment
+    is_windows = os.name == 'nt'
+    
+    if is_windows:
+        # Windows: use 84389961241 with proxy
+        session_name = "84389961241"
+    else:
+        # Linux VPS: use ingestor_session (it's working, 84389961241 is corrupted)
+        session_name = "ingestor_session"
+    
     session_path = os.path.join(os.getcwd(), "sessions", session_name)
     
     if not os.path.exists(f"{session_path}.session"):
         logger.error(f"❌ Session not found: {session_path}.session")
         return
     
-    # Load proxy config
+    # Load proxy config (only for Windows)
     proxy = None
-    proxies_file = os.path.join(os.getcwd(), "proxies.json")
-    if os.path.exists(proxies_file):
-        with open(proxies_file, 'r') as f:
-            proxies = json.load(f)
-            if session_name in proxies:
-                p = proxies[session_name]
-                proxy = (
-                    socks.SOCKS5,
-                    p["hostname"],
-                    p["port"],
-                    True,
-                    p["username"],
-                    p["password"]
-                )
-                logger.info(f"🔐 Proxy: {p['hostname']}:{p['port']}")
+    if is_windows:
+        proxies_file = os.path.join(os.getcwd(), "proxies.json")
+        if os.path.exists(proxies_file):
+            with open(proxies_file, 'r') as f:
+                proxies = json.load(f)
+                if session_name in proxies:
+                    p = proxies[session_name]
+                    proxy = (
+                        socks.SOCKS5,
+                        p["hostname"],
+                        p["port"],
+                        True,
+                        p["username"],
+                        p["password"]
+                    )
+                    logger.info(f"🔐 Proxy: {p['hostname']}:{p['port']}")
     
     logger.info(f"📱 Session: {session_name}")
     
