@@ -93,7 +93,7 @@ class TemplateProcessor:
             
         # 2. Generate Image using Visualizer
         try:
-            image_path = visualizer.create_report_image(report_data, template_code)
+            image_path = await visualizer.create_report_image(report_data, template_code)
             logger.info(f"Generated report image: {image_path}")
         except Exception as e:
             logger.error(f"Visualizer failed: {e}")
