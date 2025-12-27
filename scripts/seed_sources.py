@@ -4,9 +4,13 @@ Sử dụng Telethon để resolve username -> chat_id
 """
 import asyncio
 import sys
-import osimport random
+import os
+import json
+import random
+
 sys.path.append(os.getcwd())
 
+import socks
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.errors import UsernameNotOccupiedError, ChannelPrivateError, FloodWaitError
@@ -202,18 +206,37 @@ async def main():
     """Main function"""
     logger.info("🚀 Starting source seeding...")
     
-    # Get session file
-    session_path = os.path.join(os.getcwd(), "sessions", "ingestor_session")
+    # Get session file - use 84389961241 with proxy
+    session_path = os.path.join(os.getcwd(), "sessions", "84389961241")
     
     if not os.path.exists(f"{session_path}.session"):
-        logger.error("❌ Session file not found! Run create_session.py first.")
+        logger.error("❌ Session file not found!")
         return
     
-    # Create Telethon client
+    # Load proxy config
+    proxy = None
+    proxies_file = os.path.join(os.getcwd(), "proxies.json")
+    if os.path.exists(proxies_file):
+        with open(proxies_file, 'r') as f:
+            proxies = json.load(f)
+            if "84389961241" in proxies:
+                p = proxies["84389961241"]
+                proxy = (
+                    socks.SOCKS5,
+                    p["hostname"],
+                    p["port"],
+                    True,
+                    p["username"],
+                    p["password"]
+                )
+                logger.info(f"🔐 Using proxy: {p['hostname']}:{p['port']}")
+    
+    # Create Telethon client with proxy
     client = TelegramClient(
         session_path,
         settings.API_ID,
-        settings.API_HASH
+        settings.API_HASH,
+        proxy=proxy
     )
     
     try:
