@@ -1,0 +1,117 @@
+
+
+## Hướng dẫn cấu hình PM2 trên VPS cho SanKeo
+
+### 1️⃣ Cài đặt PM2 trên VPS
+
+```bash
+# Cài Node.js (nếu chưa có)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Cài PM2 global
+sudo npm install -g pm2
+```
+
+### 2️⃣ Clone project và setup môi trường
+
+```bash
+# Clone project
+cd /home/your-user
+git clone <your-repo-url> SanKeo
+cd SanKeo
+
+# Tạo virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Cài dependencies
+pip install -r requirements.txt
+
+# Cài Playwright browsers (nếu cần - nhưng giờ đã bỏ)
+# playwright install chromium
+```
+
+### 3️⃣ Cấu hình environment
+
+```bash
+# Copy file env mẫu
+cp .env.example .env
+
+# Chỉnh sửa .env với thông tin thực
+nano .env
+```
+
+### 4️⃣ Khởi động với PM2
+
+```bash
+# Khởi động tất cả services
+pm2 start ecosystem.config.js
+
+# Xem trạng thái
+pm2 status
+
+# Xem logs real-time
+pm2 logs
+
+# Xem logs từng service
+pm2 logs sankeo-bot
+pm2 logs sankeo-worker
+pm2 logs sankeo-ingestor
+```
+
+### 5️⃣ Cấu hình tự động khởi động khi reboot
+
+```bash
+# Lưu danh sách process hiện tại
+pm2 save
+
+# Tạo startup script
+pm2 startup
+
+# Chạy lệnh được hiển thị (sudo env PATH=...)
+```
+
+### 6️⃣ Các lệnh PM2 thường dùng
+
+| Lệnh | Mô tả |
+|------|-------|
+| `pm2 status` | Xem trạng thái tất cả services |
+| `pm2 logs` | Xem logs real-time |
+| `pm2 restart all` | Restart tất cả |
+| `pm2 restart sankeo-bot` | Restart 1 service |
+| `pm2 stop all` | Dừng tất cả |
+| `pm2 delete all` | Xóa tất cả khỏi PM2 |
+| `pm2 monit` | Monitor CPU/RAM |
+| `pm2 reload all` | Zero-downtime reload |
+
+### 7️⃣ Xem dashboard web (tuỳ chọn)
+
+```bash
+# Đăng ký PM2 Plus (miễn phí cho 1 server)
+pm2 plus
+```
+
+### ⚠️ Lưu ý quan trọng
+
+1. **Đảm bảo Redis đang chạy** trước khi start PM2:
+   ```bash
+   sudo systemctl start redis
+   sudo systemctl enable redis
+   ```
+
+2. **Database phải được init** trước:
+   ```bash
+   source venv/bin/activate
+   python init_db.py
+   ```
+
+3. **Kiểm tra port 8000** cho payment server không bị chiếm:
+   ```bash
+   sudo lsof -i :8000
+   ```
+
+4. **Firewall** mở port nếu cần:
+   ```bash
+   sudo ufw allow 8000/tcp
+   ```
