@@ -91,18 +91,13 @@ class TemplateProcessor:
             logger.error(f"Failed to generate structured report for {template_code}")
             return None
             
-        # 2. Generate Image using Visualizer
-        try:
-            image_path = await visualizer.create_report_image(report_data, template_code)
-            logger.info(f"Generated report image: {image_path}")
-        except Exception as e:
-            logger.error(f"Visualizer failed: {e}")
-            image_path = None
+        # 2. Format text report using Visualizer
+        text_report = visualizer.format_text_report(report_data, template_code)
+        logger.info(f"Generated text report for {template_code}")
             
-        # 3. Return both text summary and image path
+        # 3. Return text report and data
         return {
-            "text": report_data.get("action_summary", "No summary available."),
-            "image_path": image_path,
+            "text": text_report,
             "data": report_data
         }
 

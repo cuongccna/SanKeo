@@ -41,7 +41,7 @@ class AIEngine:
         # Giới hạn context window để tránh quá tải token, lấy 50 tin mới nhất
         context_text = "\n---\n".join(messages[:50])
         
-        # 3. Dynamic Prompt (Đã nâng cấp với Time Context & Anti-Hallucination)
+        # 3. Dynamic Prompt (Đã nâng cấp với Time Context & Contextual Analysis)
         system_prompt = f"""
         {config['ai_prompt']}
         
@@ -52,12 +52,32 @@ class AIEngine:
         1. KIỂM TRA THỜI GIAN: So sánh thời gian trong tin nhắn với "THỜI GIAN HIỆN TẠI". 
            - Nếu tin nhắn nói "hôm qua" hoặc quá 24h, hãy coi là tin cũ (trừ khi là phân tích vĩ mô).
            - Ưu tiên tin nhắn mới nhất.
-        2. CHỐNG BỊA ĐẶT (HALLUCINATION): 
-           - Chỉ trích xuất con số (Giá, Volume) có trong văn bản. KHÔNG ĐƯỢC ĐOÁN.
-           - Nếu không có dữ liệu, trả về "N/A" hoặc null.
+        
+        2. KHÔNG ĐƯỢC TRẢ VỀ "N/A" - PHẢI PHÂN TÍCH NGỮ CẢNH:
+           - Nếu KHÔNG có con số cụ thể trong tin nhắn, hãy ĐƯA RA NHẬN ĐỊNH dựa trên ngữ cảnh, tâm lý thị trường, xu hướng được đề cập.
+           - Ví dụ: Thay vì "Giá: N/A", hãy viết "Giá: Xu hướng tăng nhẹ theo sentiment tích cực" hoặc "Giá: Chưa có điểm vào rõ ràng, chờ xác nhận".
+           - Với Volume: Thay vì "N/A", viết "Volume: Dự kiến tăng theo momentum hiện tại" hoặc "Volume: Không có tín hiệu bất thường".
+           - Với Trend: Luôn đưa ra đánh giá dựa trên tổng thể nội dung: "Xu hướng: Tích lũy chờ breakout" hoặc "Xu hướng: Điều chỉnh ngắn hạn".
+           - Mọi field metrics PHẢI có giá trị là một nhận định có ý nghĩa, KHÔNG BAO GIỜ để trống hoặc "N/A".
+        
         3. OUTPUT JSON THUẦN: 
            - Trả về JSON hợp lệ. Không dùng Markdown (```json). Không giải thích thêm.
-           - Field "metrics" phải luôn tồn tại (dù rỗng).
+           - Field "metrics" phải luôn tồn tại và chứa ít nhất 3 metrics với nhận định có ý nghĩa.
+           - Field "summary" phải là một đoạn phân tích ngắn gọn, súc tích (2-4 câu).
+           - Field "steps" phải chứa 2-4 hành động cụ thể khuyến nghị.
+        
+        4. CHUẨN CẤU TRÚC JSON OUTPUT:
+        {{
+            "score": <số 0-100 - điểm tâm lý thị trường>,
+            "metrics": {{
+                "Xu hướng": "<nhận định xu hướng dựa trên context>",
+                "Tâm lý": "<đánh giá tâm lý thị trường>",
+                "Rủi ro": "<mức độ rủi ro và lý do>",
+                ...các metrics khác phù hợp với template...
+            }},
+            "summary": "<đoạn tóm tắt phân tích chính>",
+            "steps": ["<hành động 1>", "<hành động 2>", ...]
+        }}
         
         Dữ liệu đầu vào (Tin nhắn Telegram):
         {context_text}

@@ -760,25 +760,14 @@ Chúc bạn săn kèo thành công! 🚀
                 if notification.get("type") == "TEMPLATE_REPORT":
                     user_id = notification["user_id"]
                     message_text = notification["message"]
-                    image_path = notification.get("image_path")
                     
                     try:
-                        # Send Image if available
-                        if image_path and os.path.exists(image_path):
-                            try:
-                                from aiogram.types import FSInputFile
-                                photo = FSInputFile(image_path)
-                                await bot.send_photo(user_id, photo=photo, caption=message_text, parse_mode="HTML")
-                            except Exception as e:
-                                logger.warning(f"Failed to send report image to {user_id}: {e}. Sending text only.")
-                                await bot.send_message(user_id, message_text, parse_mode="HTML")
-                        else:
-                            # Text only fallback
-                            try:
-                                await bot.send_message(user_id, message_text, parse_mode="HTML")
-                            except Exception as e:
-                                logger.warning(f"Failed to send template report with HTML to {user_id}: {e}. Retrying with plain text.")
-                                await bot.send_message(user_id, message_text, parse_mode=None)
+                        # Send text report
+                        try:
+                            await bot.send_message(user_id, message_text, parse_mode="HTML")
+                        except Exception as e:
+                            logger.warning(f"Failed to send template report with HTML to {user_id}: {e}. Retrying with plain text.")
+                            await bot.send_message(user_id, message_text, parse_mode=None)
                             
                         logger.info(f"Template report sent to {user_id}")
                         
@@ -791,15 +780,7 @@ Chúc bạn săn kèo thành công! 🚀
                             if targets:
                                 for target in targets:
                                     try:
-                                        if image_path and os.path.exists(image_path):
-                                            try:
-                                                photo = FSInputFile(image_path)
-                                                await bot.send_photo(target.channel_id, photo=photo, caption=message_text, parse_mode="HTML")
-                                            except:
-                                                await bot.send_message(target.channel_id, message_text, parse_mode="HTML")
-                                        else:
-                                            await bot.send_message(target.channel_id, message_text, parse_mode="HTML")
-                                            
+                                        await bot.send_message(target.channel_id, message_text, parse_mode="HTML")
                                         logger.debug(f"Forwarded template to channel {target.channel_id} for user {user_id}")
                                         await asyncio.sleep(0.5)
                                     except Exception as e:
