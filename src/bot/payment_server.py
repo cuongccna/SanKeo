@@ -6,7 +6,7 @@ import os
 import sys
 import re
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
 from decimal import Decimal
 
@@ -154,12 +154,12 @@ async def process_vip_upgrade(user_id: int, transaction_id: str, amount: float) 
             return False
         
         # 3. Logic Quy Đổi Gói (FIX LỖ HỔNG UPGRADE)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         current_expiry = user.expiry_date
         
-        # Chuẩn hóa timezone
+        # Chuẩn hóa timezone - đảm bảo cả 2 đều timezone-aware
         if current_expiry and current_expiry.tzinfo is None:
-             current_expiry = current_expiry.replace(tzinfo=None) # Giữ naive để so sánh với now (naive)
+            current_expiry = current_expiry.replace(tzinfo=timezone.utc)
         
         # Tính số dư hiện tại (Remaining Value)
         remaining_money = 0.0

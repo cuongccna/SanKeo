@@ -2,7 +2,7 @@ import os
 import sys
 import re
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
@@ -85,12 +85,17 @@ async def sepay_webhook(payload: SePayPayload, background_tasks: BackgroundTasks
             return {"status": "error", "message": "User not found"}
 
         # Calculate new expiry
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         days_to_add = 30 # Default 30 days
         
+        # Ensure expiry_date is timezone-aware
+        current_expiry = user.expiry_date
+        if current_expiry and current_expiry.tzinfo is None:
+            current_expiry = current_expiry.replace(tzinfo=timezone.utc)
+        
         # If user is already VIP and not expired, add to existing expiry
-        if user.plan_type == PlanType.VIP and user.expiry_date and user.expiry_date > now:
-            user.expiry_date += timedelta(days=days_to_add)
+        if user.plan_type == PlanType.VIP and current_expiry and current_expiry > now:
+            user.expiry_date = current_expiry + timedelta(days=days_to_add)
         else:
             # New VIP or expired
             user.expiry_date = now + timedelta(days=days_to_add)
