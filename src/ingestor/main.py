@@ -1,6 +1,7 @@
 """
 INGESTOR SERVICE - The Ear
 Lắng nghe tin nhắn từ Telegram Channels/Groups và đẩy vào Redis Queue.
+With Smart Protection: Rate limiting, Flood detection, Account health monitoring.
 """
 import os
 import asyncio
@@ -11,7 +12,7 @@ from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError, FloodWaitError
 from telethon.tl.functions.channels import JoinChannelRequest
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 # Add project root to path
@@ -22,12 +23,16 @@ from src.common.redis_client import get_redis
 from src.common.utils import safe_execution
 from src.database.db import AsyncSessionLocal
 from src.database.models import BlacklistedChannel, SourceConfig
+from src.ingestor.protection import (
+    RateLimiter, FloodWaitHandler, BehaviorRandomizer, AccountHealthMonitor
+)
 
 load_dotenv()
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
-SESSION_NAME = 'sessions/ingestor_session'
+SESSION_NAME = 'sessions/84987939605'  # Updated to new session
+SESSION_PHONE = "84987939605"  # For protection module
 
 # Get Bot ID to prevent self-loop
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -37,6 +42,12 @@ logger = get_logger("ingestor")
 
 # Queue name
 QUEUE_RAW_MESSAGES = "queue:raw_messages"
+
+# Protection modules
+rate_limiter: RateLimiter = None
+flood_handler: FloodWaitHandler = None
+health_monitor: AccountHealthMonitor = None
+
 
 # Rate Limiting
 MAX_JOINS_PER_DAY = 20
@@ -64,6 +75,24 @@ async def load_source_configs():
             logger.info(f"Loaded {len(SOURCE_CONFIGS)} source configs.")
     except Exception as e:
         logger.error(f"Failed to load source configs: {e}")
+
+async def health_check_loop():
+    """
+    Periodically check account health.
+    Runs every 6 hours to detect issues early.
+    """
+    while True:
+        await asyncio.sleep(6 * 3600)  # Every 6 hours
+        
+        if health_monitor:
+            logger.info("🏥 Running periodic health check...")
+            health = await health_monitor.check_health()
+            
+            if health["status"] == "danger":
+                logger.critical("❌ DANGER: Account health is critical!")
+                logger.critical(f"Issues: {health['issues']}")
+            elif health["status"] == "warning":
+                logger.warning(f"⚠️ Account health warning: {health['issues']}")
 
 async def load_blacklist():
     """Load blacklisted channels from DB."""
@@ -117,8 +146,21 @@ async def join_channel(link: str):
 async def message_handler(event):
     """
     Xử lý mỗi tin nhắn mới từ bất kỳ chat nào.
-    Chỉ serialize và đẩy vào Redis, KHÔNG xử lý logic.
+    WITH PROTECTION: Rate limiting, delay simulation, flood detection.
     """
+    # ============ PROTECTION: Rate Limiting ============
+    if not await rate_limiter.check_message_rate():
+        logger.warning("Skipping message due to rate limit")
+        return
+    
+    # ============ PROTECTION: Add Human-like Delay ============
+    delay = await rate_limiter.get_message_delay()
+    logger.debug(f"⏳ Waiting {delay:.1f}s before processing message...")
+    await asyncio.sleep(delay)
+    
+    # Record this message
+    await rate_limiter.record_message()
+    
     # DEBUG: Print everything
     chat_title = "Unknown"
     try:
@@ -215,11 +257,21 @@ async def message_handler(event):
 
 async def main():
     """Main entry point for Ingestor Service."""
+    global rate_limiter, flood_handler, health_monitor
+    
     await load_blacklist()
     await load_source_configs()
     logger.info("=" * 50)
-    logger.info("INGESTOR SERVICE - Starting...")
+    logger.info("INGESTOR SERVICE - Starting with Account Protection...")
     logger.info("=" * 50)
+    
+    # ============ PROTECTION: Initialize Modules ============
+    rate_limiter = RateLimiter(SESSION_PHONE)
+    flood_handler = FloodWaitHandler(SESSION_PHONE)
+    health_monitor = AccountHealthMonitor(client, SESSION_PHONE)
+    
+    await rate_limiter.init()
+    logger.info(f"✅ Rate Limiter initialized (warm-up mode)")
     
     # Ensure sessions directory exists
     os.makedirs("sessions", exist_ok=True)
@@ -231,6 +283,13 @@ async def main():
         me = await client.get_me()
         logger.info(f"Logged in as: {me.first_name} (@{me.username})")
         
+        # ============ PROTECTION: Check Account Health ============
+        logger.info("🏥 Checking account health...")
+        health = await health_monitor.check_health()
+        if health["status"] == "danger":
+            logger.critical("❌ Account health is CRITICAL! Aborting start.")
+            return
+        
         # Get dialogs count
         dialogs = await client.get_dialogs(limit=0)
         logger.info(f"Listening to {dialogs.total} chats...")
@@ -240,10 +299,13 @@ async def main():
         await redis.ping()
         logger.info("Redis connection: OK")
         
+        # ============ PROTECTION: Start Health Check Loop ============
+        asyncio.create_task(health_check_loop())
+        
         # Start config refresh loop
         asyncio.create_task(refresh_config_loop())
         
-        logger.info("Ingestor is running. Waiting for messages...")
+        logger.info("🛡️ Ingestor is running with smart protection. Waiting for messages...")
         
         # Run until disconnected
         await client.run_until_disconnected()
