@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Time, Text, JSON
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, ForeignKey, Numeric, Integer, Time, Text, JSON, Float, Index
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 import enum
@@ -104,3 +104,121 @@ class BlacklistedChannel(Base):
     channel_id = Column(BigInteger, primary_key=True)
     reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============ NEWS STORAGE WITH DEDUP & COMPRESSION ============
+
+class CryptoNews(Base):
+    """
+    Main news table with dedup via content_hash.
+    Stores compressed text to reduce DB size.
+    """
+    __tablename__ = "crypto_news"
+    __table_args__ = (
+        Index('idx_content_hash', 'content_hash'),
+        Index('idx_source_id', 'source_id'),
+        Index('idx_created_at', 'created_at'),
+        Index('idx_final_weight', 'final_weight'),
+    )
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    
+    # Deduplication: content_hash = SHA256(normalized_text)
+    content_hash = Column(String(64), unique=True, index=True, nullable=False)
+    
+    # Source info
+    source_id = Column(BigInteger, nullable=False)  # Telegram chat_id
+    source_name = Column(String, nullable=False)
+    message_id = Column(Integer, nullable=True)
+    
+    # Content (compressed in storage)
+    text_summary = Column(String(500), nullable=False)  # First 500 chars
+    text_full = Column(Text, nullable=True)  # Full text if important (weight >= 70)
+    
+    # Filter results
+    layer1_matched_keywords = Column(JSON, nullable=True)  # {"ticker": ["BTC"], ...}
+    layer2_quality_score = Column(Float, nullable=True)  # 0-100
+    layer2_sentiment = Column(String, nullable=True)  # bullish|neutral|bearish
+    layer2_urgency = Column(String, nullable=True)  # breaking|important|regular
+    layer2_credibility = Column(Float, nullable=True)  # 0-100
+    
+    layer3_relevance = Column(Float, nullable=True)  # 0-100
+    layer3_credibility = Column(Float, nullable=True)  # 0-100
+    layer3_market_impact = Column(Float, nullable=True)  # 0-100
+    final_weight = Column(Float, nullable=True)  # Final score 0-100
+    ai_reasoning = Column(Text, nullable=True)
+    
+    # Metadata
+    message_link = Column(String, nullable=True)
+    image_path = Column(String, nullable=True)
+    tags = Column(JSON, default=[])  # ["ONCHAIN", "SIGNAL", ...]
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    occurrences = Column(Integer, default=1)  # How many times seen (dedup counter)
+    
+    # Engagement (optional, for future analytics)
+    view_count = Column(Integer, default=0)
+    share_count = Column(Integer, default=0)
+    user_feedback = Column(Integer, default=0)  # +1: useful, -1: spam, 0: neutral
+
+
+class NewsDuplicate(Base):
+    """
+    Track duplicate messages by content_hash.
+    Keeps references to all duplicate instances.
+    Used to prevent showing same news multiple times.
+    """
+    __tablename__ = "news_duplicates"
+    __table_args__ = (
+        Index('idx_content_hash', 'content_hash'),
+        Index('idx_first_news_id', 'first_news_id'),
+    )
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    
+    # Hash of content
+    content_hash = Column(String(64), nullable=False, index=True)
+    
+    # Reference to "canonical" news record
+    first_news_id = Column(BigInteger, ForeignKey("crypto_news.id"), nullable=False)
+    
+    # Duplicate instance info
+    source_id = Column(BigInteger, nullable=False)
+    message_id = Column(Integer, nullable=True)
+    
+    # Similarity metrics
+    cosine_similarity = Column(Float, default=0.95)  # How similar to canonical (0-1)
+    text_diff_ratio = Column(Float, nullable=True)  # Diff ratio
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class NewsArchive(Base):
+    """
+    Archive old news (> 7 days) in compressed format.
+    Move data here to reduce main table size.
+    
+    Strategy: Keep hot data in crypto_news (7 days),
+    move to archive after.
+    """
+    __tablename__ = "news_archive"
+    __table_args__ = (
+        Index('idx_archived_at', 'archived_at'),
+    )
+    
+    id = Column(BigInteger, primary_key=True)  # Same as crypto_news.id
+    content_hash = Column(String(64), unique=True)
+    
+    # Compressed summary
+    summary = Column(String(200), nullable=False)
+    
+    # Aggregated stats
+    total_occurrences = Column(Integer, default=1)
+    final_weight = Column(Float, nullable=True)
+    sentiment = Column(String, nullable=True)
+    
+    archived_at = Column(DateTime(timezone=True), server_default=func.now())
+    original_created_at = Column(DateTime(timezone=True), nullable=False)

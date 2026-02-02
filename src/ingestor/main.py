@@ -31,8 +31,9 @@ load_dotenv()
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
-SESSION_NAME = 'sessions/84987939605'  # Updated to new session
-SESSION_PHONE = "84987939605"  # For protection module
+# Use dedicated ingestor session for Telethon
+SESSION_NAME = 'sessions/ingestor_telethon'  # Telethon format session
+SESSION_PHONE = "ingestor_telethon"  # For protection module
 
 # Get Bot ID to prevent self-loop
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
