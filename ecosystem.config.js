@@ -74,6 +74,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "800M",
+      cwd: "./",
       env: {
         PYTHONPATH: ".",
         NODE_ENV: "production"
