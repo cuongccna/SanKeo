@@ -115,10 +115,9 @@ class CryptoNews(Base):
     """
     __tablename__ = "crypto_news"
     __table_args__ = (
-        Index('idx_content_hash', 'content_hash'),
-        Index('idx_source_id', 'source_id'),
-        Index('idx_created_at', 'created_at'),
-        Index('idx_final_weight', 'final_weight'),
+        Index('idx_crypto_news_source_id', 'source_id'),
+        Index('idx_crypto_news_created_at', 'created_at'),
+        Index('idx_crypto_news_final_weight', 'final_weight'),
     )
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -173,8 +172,7 @@ class NewsDuplicate(Base):
     """
     __tablename__ = "news_duplicates"
     __table_args__ = (
-        Index('idx_content_hash', 'content_hash'),
-        Index('idx_first_news_id', 'first_news_id'),
+        Index('idx_news_dup_first_news_id', 'first_news_id'),
     )
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -206,7 +204,7 @@ class NewsArchive(Base):
     """
     __tablename__ = "news_archive"
     __table_args__ = (
-        Index('idx_archived_at', 'archived_at'),
+        Index('idx_news_archive_archived_at', 'archived_at'),
     )
     
     id = Column(BigInteger, primary_key=True)  # Same as crypto_news.id
