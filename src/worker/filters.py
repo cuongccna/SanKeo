@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from src.common.logger import get_logger
-from src.common.ai_client import get_ai_client
+from src.common.ai_client import ai_client
 
 logger = get_logger("filter")
 
@@ -20,21 +20,22 @@ logger = get_logger("filter")
 class KeywordFilter:
     """Filter messages by crypto-related keywords."""
     
-    # Crypto ticker patterns
+    # Crypto ticker patterns (simplified for better matching)
     CRYPTO_KEYWORDS = {
-        "ticker": r"\$[A-Z]{2,6}\b|\\b(BTC|ETH|SOL|XRP|ADA|BNB|DOGE|SHIB|LINK|MATIC|FTM|AVAX|NEAR|ARB|OP)\\b",
+        "ticker": r"\$(BTC|ETH|SOL|XRP|ADA|BNB|DOGE|SHIB|LINK|MATIC|FTM|AVAX|NEAR|ARB|OP)|BTC|ETH|SOL|XRP|ADA|BNB",
         "technical": r"\b(bull|bullish|bear|bearish|pump|dump|ath|atl|support|resistance|breakout|consolidation|moon|rocket|dip|hodl)\b",
         "event": r"\b(listing|ido|presale|launch|airdrop|fork|upgrade|merge|burn|mint|stake|unstake|apy|apr)\b",
         "defi": r"\b(defi|swap|yield|farming|liquidity|pool|lptoken|slippage|impermanent|uniswap|aave|curve|lido)\b",
         "social": r"\b(trending|viral|twitter|reddit|discord|telegram|community|influencer|dyor|fud|hopium)\b",
         "exchange": r"\b(binance|coinbase|kraken|bybit|okx|htx|gate|kucoin|dexos|uniswap|pancakeswap)\b",
-        "security": r"\b(exploit|hack|rug|scam|rugpull|honeypot|flash.*loan|slashing|vulnerable)\b",
-        "narrative": r"\b(metaverse|web3|ai|nft|gaming|layer2|zk|rollup|bridge|oracle|dao)\b"
+        "security": r"\b(exploit|hack|rug|scam|rugpull|honeypot|slashing|vulnerable)\b",
+        "narrative": r"\b(metaverse|web3|ai|nft|gaming|layer2|zk|rollup|bridge|oracle|dao)\b",
+        "onchain": r"\b(whale|onchain|on-chain|glassnode|chainalysis|inflow|outflow|accumulation|distribution)\b"
     }
     
     EXCLUDE_KEYWORDS = {
-        "spam": r"\b(follow|subscribe|like|share|retweet|upvote|win|giveaway|contest|crypto_signal)\b",
-        "pump_dump": r"(pump.*group|signal.*service|guaranteed|moon.*guaranteed)",
+        "spam": r"\b(follow|subscribe|like|share|retweet|upvote|win|giveaway|contest)\b",
+        "pump_dump": r"(pump.*group|signal.*service|guaranteed.*moon|moon.*guaranteed)",
     }
     
     @staticmethod
@@ -77,24 +78,35 @@ class KeywordFilter:
         if not matched_categories:
             return 0
         
-        # Weight categories
+        # Weight categories (higher = more important)
         weights = {
-            "ticker": 25,
-            "technical": 15,
-            "event": 20,
+            "ticker": 20,
+            "technical": 18,
+            "event": 15,
             "defi": 15,
             "social": 10,
-            "exchange": 15,
-            "security": 20,
-            "narrative": 10
+            "exchange": 12,
+            "security": 18,
+            "narrative": 12,
+            "onchain": 15
         }
         
         score = 0
+        matched_count = 0
+        
         for category, matches in matched_categories.items():
             if matches:
+                matched_count += 1
                 weight = weights.get(category, 10)
-                # Each match in category contributes to score
-                score += min(len(matches) * (weight / 5), weight)
+                # First match = full weight, additional = half
+                if len(matches) == 1:
+                    score += weight
+                else:
+                    score += weight + (len(matches) - 1) * (weight / 2)
+        
+        # Bonus: multiple categories = higher relevance
+        if matched_count >= 2:
+            score *= (1 + matched_count * 0.1)  # 10% boost per category
         
         return min(score, 100)
 
@@ -233,7 +245,9 @@ class AIScorer:
         """
         
         try:
-            ai = await get_ai_client()
+            if not ai_client.model:
+                logger.warning("AI Client not available, using default scoring")
+                return AIScorer._default_scoring(keyword_matches, content_analysis)
             
             prompt = f"""
 Analyze this cryptocurrency news message and score it:
@@ -256,7 +270,7 @@ TASK: Provide a JSON response with:
 Return ONLY valid JSON, no other text.
 """
             
-            response = await ai.generate_content(prompt)
+            response = await ai_client.model.generate_content_async(prompt)
             
             # Parse AI response
             try:
@@ -284,26 +298,28 @@ Return ONLY valid JSON, no other text.
                 
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse AI response: {e}")
-                return {
-                    "relevance_score": 50,
-                    "credibility_score": 50,
-                    "market_impact": 50,
-                    "final_weight": 50,
-                    "should_include": True,
-                    "reasoning": "Failed to parse AI response, passing through"
-                }
+                return AIScorer._default_scoring(keyword_matches, content_analysis)
                 
         except Exception as e:
             logger.error(f"AI scoring error: {e}")
-            # Fallback: pass through with default scores
-            return {
-                "relevance_score": 50,
-                "credibility_score": 50,
-                "market_impact": 50,
-                "final_weight": 50,
-                "should_include": True,
-                "reasoning": f"AI error: {str(e)}"
-            }
+            return AIScorer._default_scoring(keyword_matches, content_analysis)
+    
+    @staticmethod
+    def _default_scoring(keyword_matches: Dict, content_analysis: Dict) -> Dict:
+        """Fallback scoring when AI is unavailable."""
+        # Calculate based on keyword matches and content analysis
+        base_score = len(keyword_matches) * 15  # Each category = 15 points
+        quality_boost = content_analysis.get("quality_score", 50) * 0.3
+        final = min(base_score + quality_boost, 100)
+        
+        return {
+            "relevance_score": min(base_score, 100),
+            "credibility_score": content_analysis.get("credibility", 50),
+            "market_impact": min(base_score * 0.8, 100),
+            "final_weight": final,
+            "should_include": final >= 50,
+            "reasoning": "Default scoring (AI unavailable)"
+        }
 
 
 # ============ MAIN FILTER ORCHESTRATOR ============
@@ -342,7 +358,7 @@ class MessageFilter:
         keyword_matches = KeywordFilter.get_matched_categories(text)
         relevance_score = KeywordFilter.calculate_relevance_score(keyword_matches)
         
-        if relevance_score < 20:  # Very low relevance
+        if relevance_score < 15:  # Very low relevance threshold (was 20)
             logger.debug(f"Message {message_id}: REJECTED - LOW RELEVANCE ({relevance_score})")
             result["layer1_status"] = "rejected_low_relevance"
             result["relevance_score"] = relevance_score
