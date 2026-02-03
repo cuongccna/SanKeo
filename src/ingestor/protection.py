@@ -5,22 +5,6 @@ Implements intelligent rate limiting, flood detection, and human-like behavior.
 import asyncio
 import random
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
-from telethon.errors import FloodWaitError, AuthKeyUnregisteredError, UnauthorizedError
-
-from src.common.logger import get_logger
-from src.common.redis_client import get_redis
-
-logger = get_logger("protection")
-
-"""
-Account Protection Module - Prevent Telegram Ban/Lock
-Implements intelligent rate limiting, flood detection, and human-like behavior.
-"""
-import asyncio
-import random
-import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
