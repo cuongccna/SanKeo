@@ -45,6 +45,17 @@ FLOOD_MAX_BACKOFF = int(os.getenv("FLOOD_MAX_BACKOFF", "300"))  # 5 min (reduced
 # Health Check
 HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", str(12 * 3600)))  # 12 hours
 
+# ============ DEBUG LOGGING ============
+logger.info("=" * 60)
+logger.info("PROTECTION CONFIG LOADED FROM ENV:")
+logger.info(f"  WARM0_MAX_MSG_H: {WARM_UP_SCHEDULE[0]['max_messages_per_hour']}")
+logger.info(f"  WARM6_MAX_MSG_H: {WARM_UP_SCHEDULE[6]['max_messages_per_hour']}")
+logger.info(f"  MIN_MESSAGE_DELAY: {MIN_MESSAGE_DELAY}s")
+logger.info(f"  MAX_MESSAGE_DELAY: {MAX_MESSAGE_DELAY}s")
+logger.info(f"  PAUSE_PROB: {PAUSE_PROB}")
+logger.info(f"  PAUSE_DURATION: {PAUSE_DURATION}")
+logger.info("=" * 60)
+
 
 class RateLimiter:
     """Intelligent rate limiting based on account age and warm-up schedule."""
