@@ -14,31 +14,52 @@ from src.common.redis_client import get_redis
 
 logger = get_logger("protection")
 
+"""
+Account Protection Module - Prevent Telegram Ban/Lock
+Implements intelligent rate limiting, flood detection, and human-like behavior.
+"""
+import asyncio
+import random
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict
+from telethon.errors import FloodWaitError, AuthKeyUnregisteredError, UnauthorizedError
+from dotenv import load_dotenv
+
+from src.common.logger import get_logger
+from src.common.redis_client import get_redis
+
+load_dotenv()
+
+logger = get_logger("protection")
+
 # ============ CONFIG ============
-# Warm-up: Gradually increase activity
-WARM_UP_DAYS = 7
+# Warm-up: Gradually increase activity (optimized for better throughput)
+WARM_UP_DAYS = int(os.getenv("WARM_UP_DAYS", "7"))
 WARM_UP_SCHEDULE = {
-    0: {"max_messages_per_hour": 10, "max_joins_per_day": 2},     # Day 1: Very conservative
-    1: {"max_messages_per_hour": 15, "max_joins_per_day": 3},     # Day 2
-    2: {"max_messages_per_hour": 20, "max_joins_per_day": 5},     # Day 3
-    3: {"max_messages_per_hour": 30, "max_joins_per_day": 8},     # Day 4
-    4: {"max_messages_per_hour": 40, "max_joins_per_day": 10},    # Day 5
-    5: {"max_messages_per_hour": 50, "max_joins_per_day": 15},    # Day 6
-    6: {"max_messages_per_hour": 60, "max_joins_per_day": 20},    # Day 7+: Normal
+    0: {"max_messages_per_hour": int(os.getenv("WARM0_MAX_MSG_H", "50")), "max_joins_per_day": int(os.getenv("WARM0_MAX_J", "5"))},
+    1: {"max_messages_per_hour": int(os.getenv("WARM1_MAX_MSG_H", "80")), "max_joins_per_day": int(os.getenv("WARM1_MAX_J", "8"))},
+    2: {"max_messages_per_hour": int(os.getenv("WARM2_MAX_MSG_H", "120")), "max_joins_per_day": int(os.getenv("WARM2_MAX_J", "12"))},
+    3: {"max_messages_per_hour": int(os.getenv("WARM3_MAX_MSG_H", "150")), "max_joins_per_day": int(os.getenv("WARM3_MAX_J", "15"))},
+    4: {"max_messages_per_hour": int(os.getenv("WARM4_MAX_MSG_H", "180")), "max_joins_per_day": int(os.getenv("WARM4_MAX_J", "20"))},
+    5: {"max_messages_per_hour": int(os.getenv("WARM5_MAX_MSG_H", "200")), "max_joins_per_day": int(os.getenv("WARM5_MAX_J", "25"))},
+    6: {"max_messages_per_hour": int(os.getenv("WARM6_MAX_MSG_H", "250")), "max_joins_per_day": int(os.getenv("WARM6_MAX_J", "30"))},
 }
 
-# Message Processing Delays
-MIN_MESSAGE_DELAY = 5  # seconds
-MAX_MESSAGE_DELAY = 15  # seconds
-PAUSE_INTERVAL = 3600  # Pause every 1 hour
-PAUSE_DURATION = (120, 300)  # 2-5 minutes pause
+# Message Processing Delays (configurable for tuning)
+MIN_MESSAGE_DELAY = float(os.getenv("MIN_MESSAGE_DELAY", "1"))  # seconds (reduced from 5)
+MAX_MESSAGE_DELAY = float(os.getenv("MAX_MESSAGE_DELAY", "4"))  # seconds (reduced from 15)
+PAUSE_INTERVAL = int(os.getenv("PAUSE_INTERVAL", "0"))  # No forced pause loop
+PAUSE_PROB = float(os.getenv("PAUSE_PROB", "0.02"))  # 2% chance (reduced from 10%)
+PAUSE_DURATION = (int(os.getenv("PAUSE_MIN", "60")), int(os.getenv("PAUSE_MAX", "120")))  # 1-2 min (reduced)
 
 # Flood Detection
-FLOOD_BACKOFF_MULTIPLIER = 1.5
-FLOOD_MAX_BACKOFF = 600  # 10 minutes
+FLOOD_BACKOFF_MULTIPLIER = float(os.getenv("FLOOD_BACKOFF_MULTIPLIER", "1.5"))
+FLOOD_MAX_BACKOFF = int(os.getenv("FLOOD_MAX_BACKOFF", "300"))  # 5 min (reduced from 10)
 
 # Health Check
-HEALTH_CHECK_INTERVAL = 6 * 3600  # Every 6 hours
+HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", str(12 * 3600)))  # 12 hours
 
 
 class RateLimiter:
@@ -124,10 +145,10 @@ class RateLimiter:
         # Base delay with randomization
         base_delay = random.uniform(MIN_MESSAGE_DELAY, MAX_MESSAGE_DELAY)
         
-        # Add occasional long pauses to simulate human behavior
-        if random.random() < 0.1:  # 10% chance
+        # Occasional pauses (low probability)
+        if random.random() < PAUSE_PROB:
             logger.info(f"⏸️ Taking human-like pause ({PAUSE_DURATION[0]}-{PAUSE_DURATION[1]}s)...")
-            base_delay = random.uniform(*PAUSE_DURATION)
+            base_delay = random.uniform(PAUSE_DURATION[0], PAUSE_DURATION[1])
         
         return base_delay
     
